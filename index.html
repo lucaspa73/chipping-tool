@@ -45,7 +45,7 @@ function handle(input){
   reader.readAsDataURL(file);
 }
 
-// 🔥 ANALISI REALE SU LINEE
+// 🔬 ANALISI MIGLIORATA (ROI + LINEE)
 function analyze(img, name){
 
   const canvas = document.getElementById("canvas");
@@ -59,30 +59,38 @@ function analyze(img, name){
   let imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
   let data = imageData.data;
 
+  // 🎯 ROI centrale (40% centrale)
+  let xStart = Math.floor(canvas.width * 0.3);
+  let xEnd   = Math.floor(canvas.width * 0.7);
+  let yStart = Math.floor(canvas.height * 0.3);
+  let yEnd   = Math.floor(canvas.height * 0.7);
+
   let edges = 0;
   let broken = 0;
 
-  for(let y=1; y<canvas.height-1; y++){
-    for(let x=1; x<canvas.width-1; x++){
+  for(let y=yStart+1; y<yEnd-1; y++){
+    for(let x=xStart+1; x<xEnd-1; x++){
 
       let i = (y*canvas.width + x)*4;
 
       let g = (data[i]+data[i+1]+data[i+2])/3;
 
-      let gx = (data[i+4] - data[i-4]);
-      let gy = (data[i+canvas.width*4] - data[i-canvas.width*4]);
+      // gradiente (line detection)
+      let gx = Math.abs(data[i+4] - data[i-4]);
+      let gy = Math.abs(data[i+canvas.width*4] - data[i-canvas.width*4]);
 
-      let grad = Math.abs(gx) + Math.abs(gy);
+      let grad = gx + gy;
 
-      if(grad > 40){ // linea rilevata
+      if(grad > 35){ // linea
+
         edges++;
 
-        // se linea ma pixel debole → chipping
-        if(g > 180){
+        // pixel chiaro = perdita materiale
+        if(g > 170){
           broken++;
           data[i]=255; data[i+1]=0; data[i+2]=0; // rosso difetto
         } else {
-          data[i]=0; data[i+1]=255; data[i+2]=0; // verde linea ok
+          data[i]=0; data[i+1]=255; data[i+2]=0; // verde linea OK
         }
       }
     }
@@ -99,7 +107,6 @@ Chipping: ${chipping.toFixed(2)} %`;
   results.push({name, chipping});
 }
 
-// export
 function exportExcel(){
   let ws = XLSX.utils.json_to_sheet(results);
   let wb = XLSX.utils.book_new();
