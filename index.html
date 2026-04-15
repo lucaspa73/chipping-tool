@@ -3,202 +3,193 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chipping Tool PRO V14</title>
 
+<title>Chipping Tool PRO V15</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
 body{font-family:Arial;text-align:center;background:#f5f5f5;}
-canvas{max-width:90%;border-radius:10px;margin:10px;}
+canvas{max-width:95%;border-radius:10px;touch-action:none;}
 .container{margin:20px;}
-input{margin:10px;}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V14</h1>
+<h1>Chipping Tool PRO V15</h1>
 
 <input type="file" id="files" multiple accept="image/*">
 
 <div id="results"></div>
 
-<button onclick="exportExcel()">📊 Export Excel</button>
-
 <script>
 
-let resultsData = [];
+document.getElementById("files").addEventListener("change", async e=>{
 
-document.getElementById("files").addEventListener("change", async function(e){
-
-  resultsData = [];
-  document.getElementById("results").innerHTML = "";
+  document.getElementById("results").innerHTML="";
 
   for(let file of e.target.files){
 
-    let img = new Image();
-    img.src = URL.createObjectURL(file);
+    let img=new Image();
+    img.src=URL.createObjectURL(file);
+    await new Promise(r=>img.onload=r);
 
-    await new Promise(res => img.onload = res);
+    let canvas=document.createElement("canvas");
+    let ctx=canvas.getContext("2d");
 
-    let canvas = document.createElement("canvas");
-    let ctx = canvas.getContext("2d");
-
-    canvas.width = img.width;
-    canvas.height = img.height;
+    canvas.width=img.width;
+    canvas.height=img.height;
 
     ctx.drawImage(img,0,0);
 
-    let percent = process(canvas);
+    let scale=1, offsetX=0, offsetY=0;
 
-    let iso = getISO(percent);
+    let points=[];
 
-    let nameInput = document.createElement("input");
-    nameInput.value = file.name;
+    // ZOOM TOUCH
+    let lastDist=null;
 
-    let div = document.createElement("div");
+    canvas.addEventListener("touchmove",e=>{
+      if(e.touches.length==2){
+
+        let dx=e.touches[0].clientX - e.touches[1].clientX;
+        let dy=e.touches[0].clientY - e.touches[1].clientY;
+        let dist=Math.sqrt(dx*dx+dy*dy);
+
+        if(lastDist){
+          scale *= dist/lastDist;
+        }
+
+        lastDist=dist;
+        draw();
+      }
+    });
+
+    canvas.addEventListener("touchend",()=>lastDist=null);
+
+    // TAP PER PUNTI
+    canvas.addEventListener("click",e=>{
+
+      let rect=canvas.getBoundingClientRect();
+      let x=(e.clientX-rect.left)*(canvas.width/rect.width);
+      let y=(e.clientY-rect.top)*(canvas.height/rect.height);
+
+      points.push({x,y});
+
+      if(points.length>4) points.shift();
+
+      draw();
+
+      if(points.length==4){
+        analyze();
+      }
+    });
+
+    function draw(){
+      ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0);
+
+      ctx.setTransform(1,0,0,1,0,0);
+
+      ctx.fillStyle="red";
+      points.forEach(p=>{
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,8,0,Math.PI*2);
+        ctx.fill();
+      });
+    }
+
+    function analyze(){
+
+      // bounding box semplice (approx)
+      let minX=Math.min(...points.map(p=>p.x));
+      let maxX=Math.max(...points.map(p=>p.x));
+      let minY=Math.min(...points.map(p=>p.y));
+      let maxY=Math.max(...points.map(p=>p.y));
+
+      let w=canvas.width;
+      let h=canvas.height;
+
+      let imgData=ctx.getImageData(0,0,w,h);
+      let d=imgData.data;
+
+      let gray=[];
+      for(let i=0;i<w*h;i++){
+        gray[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
+      }
+
+      let grad=new Array(w*h).fill(0);
+
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+
+          let gx=
+            -gray[(y-1)*w+(x-1)]-2*gray[y*w+(x-1)]-gray[(y+1)*w+(x-1)]
+            +gray[(y-1)*w+(x+1)]+2*gray[y*w+(x+1)]+gray[(y+1)*w+(x+1)];
+
+          let gy=
+            -gray[(y-1)*w+(x-1)]-2*gray[(y-1)*w+x]-gray[(y-1)*w+(x+1)]
+            +gray[(y+1)*w+(x-1)]+2*gray[(y+1)*w+x]+gray[(y+1)*w+(x+1)];
+
+          grad[y*w+x]=Math.sqrt(gx*gx+gy*gy);
+        }
+      }
+
+      let sorted=grad.slice().sort((a,b)=>a-b);
+      let th=sorted[Math.floor(sorted.length*0.80)];
+
+      let edge=new Array(w*h).fill(0);
+      for(let i=0;i<w*h;i++){
+        if(grad[i]>th) edge[i]=1;
+      }
+
+      let total=0,broken=0;
+
+      for(let y=minY;y<maxY;y++){
+        for(let x=minX;x<maxX;x++){
+
+          let i=y*w+x;
+
+          if(edge[i]){
+            total++;
+
+            let n=
+              edge[y*w+(x-1)]+
+              edge[y*w+(x+1)]+
+              edge[(y-1)*w+x]+
+              edge[(y+1)*w+x];
+
+            if(n<2){
+              broken++;
+              d[i*4]=255; d[i*4+1]=0; d[i*4+2]=0;
+            }else{
+              d[i*4]=0; d[i*4+1]=255; d[i*4+2]=0;
+            }
+          }
+        }
+      }
+
+      ctx.putImageData(imgData,0,0);
+
+      let percent=(broken/total*100).toFixed(2);
+
+      let iso = percent<1?0:percent<5?1:percent<15?2:percent<35?3:percent<65?4:5;
+
+      let result=document.createElement("h3");
+      result.innerHTML=`Chipping: ${percent}% | ISO: ${iso}`;
+      document.body.appendChild(result);
+    }
+
+    let div=document.createElement("div");
     div.className="container";
-
-    div.appendChild(nameInput);
     div.appendChild(canvas);
 
-    let txt = document.createElement("h3");
-    txt.innerHTML = `Chipping: ${percent}% | ISO: ${iso}`;
-    div.appendChild(txt);
-
     document.getElementById("results").appendChild(div);
-
-    resultsData.push({
-      file: file.name,
-      custom: nameInput,
-      percent,
-      iso,
-      canvas
-    });
 
   }
 
 });
-
-function process(canvas){
-
-  let ctx = canvas.getContext("2d");
-  let w = canvas.width;
-  let h = canvas.height;
-
-  let imgData = ctx.getImageData(0,0,w,h);
-  let d = imgData.data;
-
-  let gray = [];
-  for(let i=0;i<w*h;i++){
-    gray[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
-  }
-
-  let grad = new Array(w*h).fill(0);
-
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
-
-      let gx =
-        -gray[(y-1)*w+(x-1)] -2*gray[y*w+(x-1)] -gray[(y+1)*w+(x-1)]
-        +gray[(y-1)*w+(x+1)] +2*gray[y*w+(x+1)] +gray[(y+1)*w+(x+1)];
-
-      let gy =
-        -gray[(y-1)*w+(x-1)] -2*gray[(y-1)*w+x] -gray[(y-1)*w+(x+1)]
-        +gray[(y+1)*w+(x-1)] +2*gray[(y+1)*w+x] +gray[(y+1)*w+(x+1)];
-
-      grad[y*w+x]=Math.sqrt(gx*gx+gy*gy);
-    }
-  }
-
-  let sorted = grad.slice().sort((a,b)=>a-b);
-  let th = sorted[Math.floor(sorted.length*0.80)];
-
-  let edge = new Array(w*h).fill(0);
-  for(let i=0;i<w*h;i++){
-    if(grad[i]>th) edge[i]=1;
-  }
-
-  let sx = Math.floor(w*0.35);
-  let ex = Math.floor(w*0.65);
-  let sy = Math.floor(h*0.35);
-  let ey = Math.floor(h*0.65);
-
-  let total=0;
-  let broken=0;
-
-  for(let y=sy;y<ey;y++){
-    for(let x=sx;x<ex;x++){
-
-      let i = y*w+x;
-
-      if(edge[i]){
-
-        total++;
-
-        let neighbors =
-          edge[y*w+(x-1)] +
-          edge[y*w+(x+1)] +
-          edge[(y-1)*w+x] +
-          edge[(y+1)*w+x];
-
-        if(neighbors < 2){
-          broken++;
-          d[i*4]=255;
-          d[i*4+1]=0;
-          d[i*4+2]=0;
-        } else {
-          d[i*4]=0;
-          d[i*4+1]=255;
-          d[i*4+2]=0;
-        }
-
-      }
-
-    }
-  }
-
-  ctx.putImageData(imgData,0,0);
-
-  return total ? (broken/total*100).toFixed(2) : 0;
-}
-
-function getISO(p){
-
-  p = parseFloat(p);
-
-  if(p < 1) return 0;
-  if(p < 5) return 1;
-  if(p < 15) return 2;
-  if(p < 35) return 3;
-  if(p < 65) return 4;
-  return 5;
-}
-
-function exportExcel(){
-
-  let wb = XLSX.utils.book_new();
-
-  let data = [];
-
-  resultsData.forEach(r=>{
-
-    data.push({
-      File: r.file,
-      Nome: r.custom.value,
-      Chipping: r.percent,
-      ISO: r.iso
-    });
-
-  });
-
-  let ws = XLSX.utils.json_to_sheet(data);
-
-  XLSX.utils.book_append_sheet(wb, ws, "Results");
-
-  XLSX.writeFile(wb, "Chipping_Report.xlsx");
-
-}
 
 </script>
 
