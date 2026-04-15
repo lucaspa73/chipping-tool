@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V19</title>
+<title>Chipping Tool PRO V19.1</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -10,14 +10,19 @@
 body{font-family:Arial;text-align:center;background:#f5f5f5}
 canvas{max-width:95%;border-radius:12px;margin-top:10px;touch-action:none}
 button{padding:10px 20px;margin:10px;font-size:16px;border-radius:8px;border:none;background:#007bff;color:#fff}
+input{padding:8px;margin:10px;font-size:16px;border-radius:8px}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V19</h1>
+<h1>Chipping Tool PRO V19.1</h1>
 
 <input type="file" id="files" multiple accept="image/*"><br>
+
+<label>Nome immagine:</label><br>
+<input type="text" id="customName" placeholder="Inserisci nome"><br>
+
 <button onclick="exportExcel()">Export Excel</button>
 
 <canvas id="canvas"></canvas>
@@ -33,7 +38,11 @@ let current=0
 let points=[]
 let results=[]
 
-// LOAD
+let scale=1
+let offsetX=0
+let offsetY=0
+
+// ================= LOAD =================
 document.getElementById("files").onchange=e=>{
 images=[...e.target.files]
 current=0
@@ -45,18 +54,84 @@ let img=new Image()
 img.onload=()=>{
 canvas.width=img.width
 canvas.height=img.height
+
+scale=1
+offsetX=0
+offsetY=0
+
+ctx.setTransform(1,0,0,1,0,0)
 ctx.drawImage(img,0,0)
+
 points=[]
+
+// default nome
+document.getElementById("customName").value = images[current].name
 }
 img.src=URL.createObjectURL(images[current])
 }
 
-// CLICK AREA
+// ================= ZOOM =================
+canvas.addEventListener("wheel", e=>{
+e.preventDefault()
+
+let zoom = e.deltaY < 0 ? 1.1 : 0.9
+scale *= zoom
+
+ctx.setTransform(scale,0,0,scale,offsetX,offsetY)
+redraw()
+})
+
+// ================= PAN =================
+let dragging=false
+let lastX,lastY
+
+canvas.onmousedown=e=>{
+dragging=true
+lastX=e.clientX
+lastY=e.clientY
+}
+
+canvas.onmouseup=()=>dragging=false
+
+canvas.onmousemove=e=>{
+if(dragging){
+offsetX += (e.clientX-lastX)
+offsetY += (e.clientY-lastY)
+
+lastX=e.clientX
+lastY=e.clientY
+
+ctx.setTransform(scale,0,0,scale,offsetX,offsetY)
+redraw()
+}
+}
+
+// ================= REDRAW =================
+function redraw(){
+let img=new Image()
+img.src=URL.createObjectURL(images[current])
+img.onload=()=>{
+ctx.clearRect(0,0,canvas.width,canvas.height)
+ctx.drawImage(img,0,0)
+
+// ridisegna punti
+ctx.fillStyle="red"
+points.forEach(p=>{
+ctx.beginPath()
+ctx.arc(p.x,p.y,5,0,2*Math.PI)
+ctx.fill()
+})
+}
+}
+
+// ================= CLICK =================
 canvas.onclick=e=>{
 if(points.length<4){
+
 let rect=canvas.getBoundingClientRect()
-let x=(e.clientX-rect.left)*canvas.width/rect.width
-let y=(e.clientY-rect.top)*canvas.height/rect.height
+
+let x=(e.clientX-rect.left-offsetX)/scale
+let y=(e.clientY-rect.top-offsetY)/scale
 
 points.push({x,y})
 
@@ -71,8 +146,10 @@ analyze()
 }
 }
 
-// ANALYSIS
+// ================= ANALYSIS =================
 function analyze(){
+
+let name = document.getElementById("customName").value || images[current].name
 
 let minX=Math.min(...points.map(p=>p.x))
 let maxX=Math.max(...points.map(p=>p.x))
@@ -85,16 +162,14 @@ let h=maxY-minY
 let imgData=ctx.getImageData(minX,minY,w,h)
 let d=imgData.data
 
-let totalLine=0
-let chipped=0
-
-// CONVERT TO GRAYSCALE
 let gray=[]
 for(let i=0;i<d.length;i+=4){
 gray.push((d[i]+d[i+1]+d[i+2])/3)
 }
 
-// EDGE DETECTION (SIMPLE SOBEL)
+let totalLine=0
+let chipped=0
+
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
 
@@ -110,16 +185,11 @@ gray[i+w-1] +2*gray[i+w] +gray[i+w+1]
 
 let g=Math.sqrt(gx*gx+gy*gy)
 
-// PIXEL È LINEA
 if(g>40){
 
 totalLine++
 
-// verifica continuità linea
-let center=gray[i]
-
-// se troppo scuro → difetto
-if(center < 200){
+if(gray[i] < 200){
 chipped++
 
 let idx=i*4
@@ -133,7 +203,6 @@ d[idx+2]=0
 
 let perc = totalLine>0 ? (chipped/totalLine)*100 : 0
 
-// ISO
 let iso=0
 if(perc>1) iso=1
 if(perc>5) iso=2
@@ -143,16 +212,14 @@ if(perc>40) iso=5
 
 ctx.putImageData(imgData,minX,minY)
 
-// SAVE
 results.push({
-name:images[current].name,
+name,
 chipping:perc.toFixed(2),
 iso
 })
 
-// OUTPUT
 document.getElementById("results").innerHTML+=`
-<p><b>${images[current].name}</b><br>
+<p><b>${name}</b><br>
 Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</p>
 `
 
@@ -162,7 +229,7 @@ loadImage()
 }
 }
 
-// EXPORT
+// ================= EXPORT =================
 function exportExcel(){
 let wb=XLSX.utils.book_new()
 let ws=XLSX.utils.json_to_sheet(results)
