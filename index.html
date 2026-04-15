@@ -6,7 +6,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <style>
-    body { font-family: sans-serif; text-align:center; padding:15px; background:#f5f5f5; }
+    body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5; }
     canvas { max-width:100%; margin-top:10px; }
     button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
   </style>
@@ -45,7 +45,7 @@ function handle(input){
   reader.readAsDataURL(file);
 }
 
-// 🔬 ANALISI MIGLIORATA (ROI + LINEE)
+// 🔬 ANALISI MIGLIORATA (LINEE REALI)
 function analyze(img, name){
 
   const canvas = document.getElementById("canvas");
@@ -59,38 +59,44 @@ function analyze(img, name){
   let imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
   let data = imageData.data;
 
-  // 🎯 ROI centrale (40% centrale)
-  let xStart = Math.floor(canvas.width * 0.3);
-  let xEnd   = Math.floor(canvas.width * 0.7);
-  let yStart = Math.floor(canvas.height * 0.3);
-  let yEnd   = Math.floor(canvas.height * 0.7);
+  let w = canvas.width;
+  let h = canvas.height;
+
+  // ROI più stretto (centro reale)
+  let x1 = Math.floor(w*0.35);
+  let x2 = Math.floor(w*0.65);
+  let y1 = Math.floor(h*0.35);
+  let y2 = Math.floor(h*0.65);
 
   let edges = 0;
   let broken = 0;
 
-  for(let y=yStart+1; y<yEnd-1; y++){
-    for(let x=xStart+1; x<xEnd-1; x++){
+  for(let y=y1+2; y<y2-2; y++){
+    for(let x=x1+2; x<x2-2; x++){
 
-      let i = (y*canvas.width + x)*4;
+      let i = (y*w + x)*4;
 
       let g = (data[i]+data[i+1]+data[i+2])/3;
 
-      // gradiente (line detection)
-      let gx = Math.abs(data[i+4] - data[i-4]);
-      let gy = Math.abs(data[i+canvas.width*4] - data[i-canvas.width*4]);
+      // gradienti separati (verticale/orizzontale)
+      let gx = Math.abs((data[i+4] - data[i-4]));
+      let gy = Math.abs((data[i+w*4] - data[i-w*4]));
 
-      let grad = gx + gy;
-
-      if(grad > 35){ // linea
+      // filtro linee vere (non rumore)
+      if((gx > 40 && gy < 20) || (gy > 40 && gx < 20)){
 
         edges++;
 
-        // pixel chiaro = perdita materiale
-        if(g > 170){
+        // verifica perdita (contrasto locale)
+        let localAvg =
+          ((data[i-4]+data[i-3]+data[i-2]) +
+           (data[i+4]+data[i+5]+data[i+6])) / 6;
+
+        if(g > localAvg - 5){
           broken++;
-          data[i]=255; data[i+1]=0; data[i+2]=0; // rosso difetto
+          data[i]=255; data[i+1]=0; data[i+2]=0; // difetto
         } else {
-          data[i]=0; data[i+1]=255; data[i+2]=0; // verde linea OK
+          data[i]=0; data[i+1]=255; data[i+2]=0; // OK
         }
       }
     }
