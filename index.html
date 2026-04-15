@@ -3,88 +3,97 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chipping Tool PRO V12</title>
+<title>Chipping Tool PRO V14</title>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
-body{
-  font-family: Arial;
-  text-align:center;
-  background:#f5f5f5;
-}
-
-h1{
-  margin-top:20px;
-}
-
-.container{
-  margin:20px auto;
-}
-
-canvas{
-  max-width:90%;
-  border-radius:12px;
-  margin-top:15px;
-}
-
-button{
-  padding:12px 20px;
-  font-size:16px;
-  border:none;
-  border-radius:10px;
-  background:#007bff;
-  color:white;
-  margin-top:15px;
-}
+body{font-family:Arial;text-align:center;background:#f5f5f5;}
+canvas{max-width:90%;border-radius:10px;margin:10px;}
+.container{margin:20px;}
+input{margin:10px;}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V12</h1>
+<h1>Chipping Tool PRO V14</h1>
 
-<input type="file" accept="image/*" id="fileInput">
+<input type="file" id="files" multiple accept="image/*">
 
-<div class="container">
-<canvas id="canvas"></canvas>
-</div>
+<div id="results"></div>
 
-<h2 id="result"></h2>
+<button onclick="exportExcel()">📊 Export Excel</button>
 
 <script>
 
-const input = document.getElementById("fileInput");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+let resultsData = [];
 
-input.addEventListener("change", e=>{
-  const file = e.target.files[0];
-  const img = new Image();
+document.getElementById("files").addEventListener("change", async function(e){
 
-  img.onload = ()=>{
+  resultsData = [];
+  document.getElementById("results").innerHTML = "";
+
+  for(let file of e.target.files){
+
+    let img = new Image();
+    img.src = URL.createObjectURL(file);
+
+    await new Promise(res => img.onload = res);
+
+    let canvas = document.createElement("canvas");
+    let ctx = canvas.getContext("2d");
+
     canvas.width = img.width;
     canvas.height = img.height;
+
     ctx.drawImage(img,0,0);
 
-    processImage();
+    let percent = process(canvas);
+
+    let iso = getISO(percent);
+
+    let nameInput = document.createElement("input");
+    nameInput.value = file.name;
+
+    let div = document.createElement("div");
+    div.className="container";
+
+    div.appendChild(nameInput);
+    div.appendChild(canvas);
+
+    let txt = document.createElement("h3");
+    txt.innerHTML = `Chipping: ${percent}% | ISO: ${iso}`;
+    div.appendChild(txt);
+
+    document.getElementById("results").appendChild(div);
+
+    resultsData.push({
+      file: file.name,
+      custom: nameInput,
+      percent,
+      iso,
+      canvas
+    });
+
   }
 
-  img.src = URL.createObjectURL(file);
 });
 
-function processImage(){
+function process(canvas){
 
-  let imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  let d = imgData.data;
+  let ctx = canvas.getContext("2d");
   let w = canvas.width;
   let h = canvas.height;
 
-  // GRAYSCALE
-  let gray = new Array(w*h);
+  let imgData = ctx.getImageData(0,0,w,h);
+  let d = imgData.data;
+
+  let gray = [];
   for(let i=0;i<w*h;i++){
     gray[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
   }
 
-  // SOBEL
   let grad = new Array(w*h).fill(0);
 
   for(let y=1;y<h-1;y++){
@@ -102,66 +111,38 @@ function processImage(){
     }
   }
 
-  // threshold dinamico migliorato
-  let grads = grad.slice().sort((a,b)=>a-b);
-  let threshold = grads[Math.floor(grads.length*0.80)];
+  let sorted = grad.slice().sort((a,b)=>a-b);
+  let th = sorted[Math.floor(sorted.length*0.80)];
 
-  let mask = new Array(w*h).fill(0);
+  let edge = new Array(w*h).fill(0);
   for(let i=0;i<w*h;i++){
-    if(grad[i]>threshold) mask[i]=1;
+    if(grad[i]>th) edge[i]=1;
   }
 
-  // ROI centrale
-  let startX = Math.floor(w*0.35);
-  let endX   = Math.floor(w*0.65);
-  let startY = Math.floor(h*0.35);
-  let endY   = Math.floor(h*0.65);
+  let sx = Math.floor(w*0.35);
+  let ex = Math.floor(w*0.65);
+  let sy = Math.floor(h*0.35);
+  let ey = Math.floor(h*0.65);
 
-  let total = 0;
-  let broken = 0;
+  let total=0;
+  let broken=0;
 
-  for(let y=startY;y<endY;y++){
-    for(let x=startX;x<endX;x++){
+  for(let y=sy;y<ey;y++){
+    for(let x=sx;x<ex;x++){
 
       let i = y*w+x;
 
-      if(mask[i]){
+      if(edge[i]){
 
         total++;
 
-        let horiz =
-          mask[y*w+(x-1)] +
-          mask[y*w+(x+1)];
+        let neighbors =
+          edge[y*w+(x-1)] +
+          edge[y*w+(x+1)] +
+          edge[(y-1)*w+x] +
+          edge[(y+1)*w+x];
 
-        let vert =
-          mask[(y-1)*w+x] +
-          mask[(y+1)*w+x];
-
-        let isHorizontal = horiz > vert;
-        let continuity = isHorizontal ? horiz : vert;
-
-        let brokenPixel = false;
-
-        // interruzione netta
-        if(continuity === 0){
-          brokenPixel = true;
-        }
-
-        // micro-chipping
-        if(continuity === 1){
-
-          let diag =
-            mask[(y-1)*w+(x-1)] +
-            mask[(y-1)*w+(x+1)] +
-            mask[(y+1)*w+(x-1)] +
-            mask[(y+1)*w+(x+1)];
-
-          if(diag < 2){
-            brokenPixel = true;
-          }
-        }
-
-        if(brokenPixel){
+        if(neighbors < 2){
           broken++;
           d[i*4]=255;
           d[i*4+1]=0;
@@ -179,10 +160,43 @@ function processImage(){
 
   ctx.putImageData(imgData,0,0);
 
-  let percent = total ? (broken/total*100).toFixed(2) : 0;
+  return total ? (broken/total*100).toFixed(2) : 0;
+}
 
-  document.getElementById("result").innerHTML =
-    "Chipping: " + percent + " %";
+function getISO(p){
+
+  p = parseFloat(p);
+
+  if(p < 1) return 0;
+  if(p < 5) return 1;
+  if(p < 15) return 2;
+  if(p < 35) return 3;
+  if(p < 65) return 4;
+  return 5;
+}
+
+function exportExcel(){
+
+  let wb = XLSX.utils.book_new();
+
+  let data = [];
+
+  resultsData.forEach(r=>{
+
+    data.push({
+      File: r.file,
+      Nome: r.custom.value,
+      Chipping: r.percent,
+      ISO: r.iso
+    });
+
+  });
+
+  let ws = XLSX.utils.json_to_sheet(data);
+
+  XLSX.utils.book_append_sheet(wb, ws, "Results");
+
+  XLSX.writeFile(wb, "Chipping_Report.xlsx");
 
 }
 
