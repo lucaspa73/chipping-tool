@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chipping Tool PRO</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Libreria Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 15px;
+      background: #f5f5f5;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    input, button {
+      margin: 10px;
+      padding: 10px;
+      font-size: 16px;
+    }
+
+    canvas {
+      max-width: 100%;
+      margin-top: 10px;
+      border-radius: 10px;
+    }
+
+    #result {
+      margin-top: 15px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>Chipping Tool PRO</h2>
+
+<input type="file" accept="image/*" capture="environment" id="input">
+
+<br>
+
+<canvas id="canvas"></canvas>
+
+<div id="result">Carica un'immagine per analizzare</div>
+
+<button onclick="exportExcel()">📊 Export Excel</button>
+
+<script>
+
+let results = [];
+
+// 🔹 FIX ANDROID (FileReader)
+document.getElementById("input").addEventListener("change", function(e) {
+
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function(event) {
+
+    const img = new Image();
+    img.src = event.target.result;
+
+    img.onload = function() {
+      analyze(img, file.name);
+    };
+  };
+
+  reader.readAsDataURL(file);
+});
+
+
+// 🔬 ANALISI CHIPPING
+function analyze(img, name) {
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = img.width;
+  canvas.height = img.height;
+
+  ctx.drawImage(img, 0, 0);
+
+  let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let data = imageData.data;
+
+  let white = 0;
+
+  // Threshold migliorato (robusto)
+  for (let i = 0; i < data.length; i += 4) {
+
+    let gray = (data[i] + data[i+1] + data[i+2]) / 3;
+
+    if (gray > 150) {
+      data[i] = data[i+1] = data[i+2] = 255;
+      white++;
+    } else {
+      data[i] = data[i+1] = data[i+2] = 0;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  let total = canvas.width * canvas.height;
+  let coverage = white / total;
+
+  let ideal = 0.18;
+  let chipping = Math.max(0, (ideal - coverage) / ideal * 100);
+
+  document.getElementById("result").innerText =
+    `${name}
+Chipping: ${chipping.toFixed(2)} %`;
+
+  results.push({
+    image: name,
+    chipping: chipping.toFixed(2)
+  });
+}
+
+
+// 📊 EXPORT EXCEL REALE
+function exportExcel() {
+
+  if (results.length === 0) {
+    alert("Nessun dato da esportare");
+    return;
+  }
+
+  let ws = XLSX.utils.json_to_sheet(results);
+  let wb = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(wb, ws, "Results");
+
+  XLSX.writeFile(wb, "ChippingResults.xlsx");
+}
+
+</script>
+
+</body>
+</html>
