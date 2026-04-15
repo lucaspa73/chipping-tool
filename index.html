@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V19.1</title>
+<title>Chipping Tool PRO V19.2</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -16,12 +16,11 @@ input{padding:8px;margin:10px;font-size:16px;border-radius:8px}
 
 <body>
 
-<h1>Chipping Tool PRO V19.1</h1>
+<h1>Chipping Tool PRO V19.2</h1>
 
 <input type="file" id="files" multiple accept="image/*"><br>
 
-<label>Nome immagine:</label><br>
-<input type="text" id="customName" placeholder="Inserisci nome"><br>
+<input type="text" id="customName" placeholder="Nome immagine"><br>
 
 <button onclick="exportExcel()">Export Excel</button>
 
@@ -33,11 +32,13 @@ input{padding:8px;margin:10px;font-size:16px;border-radius:8px}
 let canvas=document.getElementById("canvas")
 let ctx=canvas.getContext("2d")
 
+let img=new Image()
 let images=[]
 let current=0
 let points=[]
 let results=[]
 
+// zoom state
 let scale=1
 let offsetX=0
 let offsetY=0
@@ -50,7 +51,6 @@ loadImage()
 }
 
 function loadImage(){
-let img=new Image()
 img.onload=()=>{
 canvas.width=img.width
 canvas.height=img.height
@@ -58,63 +58,24 @@ canvas.height=img.height
 scale=1
 offsetX=0
 offsetY=0
-
-ctx.setTransform(1,0,0,1,0,0)
-ctx.drawImage(img,0,0)
-
 points=[]
 
-// default nome
-document.getElementById("customName").value = images[current].name
+document.getElementById("customName").value=images[current].name
+
+draw()
 }
 img.src=URL.createObjectURL(images[current])
 }
 
-// ================= ZOOM =================
-canvas.addEventListener("wheel", e=>{
-e.preventDefault()
-
-let zoom = e.deltaY < 0 ? 1.1 : 0.9
-scale *= zoom
-
-ctx.setTransform(scale,0,0,scale,offsetX,offsetY)
-redraw()
-})
-
-// ================= PAN =================
-let dragging=false
-let lastX,lastY
-
-canvas.onmousedown=e=>{
-dragging=true
-lastX=e.clientX
-lastY=e.clientY
-}
-
-canvas.onmouseup=()=>dragging=false
-
-canvas.onmousemove=e=>{
-if(dragging){
-offsetX += (e.clientX-lastX)
-offsetY += (e.clientY-lastY)
-
-lastX=e.clientX
-lastY=e.clientY
-
-ctx.setTransform(scale,0,0,scale,offsetX,offsetY)
-redraw()
-}
-}
-
-// ================= REDRAW =================
-function redraw(){
-let img=new Image()
-img.src=URL.createObjectURL(images[current])
-img.onload=()=>{
+// ================= DRAW =================
+function draw(){
+ctx.setTransform(1,0,0,1,0,0)
 ctx.clearRect(0,0,canvas.width,canvas.height)
+
+ctx.setTransform(scale,0,0,scale,offsetX,offsetY)
 ctx.drawImage(img,0,0)
 
-// ridisegna punti
+// punti
 ctx.fillStyle="red"
 points.forEach(p=>{
 ctx.beginPath()
@@ -122,11 +83,45 @@ ctx.arc(p.x,p.y,5,0,2*Math.PI)
 ctx.fill()
 })
 }
+
+// ================= TOUCH =================
+let lastDist=0
+
+canvas.addEventListener("touchstart", e=>{
+if(e.touches.length==2){
+lastDist=getDist(e)
+}
+})
+
+canvas.addEventListener("touchmove", e=>{
+e.preventDefault()
+
+// pinch zoom
+if(e.touches.length==2){
+let dist=getDist(e)
+let zoom=dist/lastDist
+scale*=zoom
+lastDist=dist
+draw()
+}
+
+// pan
+if(e.touches.length==1){
+offsetX+=e.touches[0].movementX||0
+offsetY+=e.touches[0].movementY||0
+draw()
+}
+})
+
+function getDist(e){
+let dx=e.touches[0].clientX-e.touches[1].clientX
+let dy=e.touches[0].clientY-e.touches[1].clientY
+return Math.sqrt(dx*dx+dy*dy)
 }
 
 // ================= CLICK =================
-canvas.onclick=e=>{
-if(points.length<4){
+canvas.addEventListener("click", e=>{
+if(points.length>=4) return
 
 let rect=canvas.getBoundingClientRect()
 
@@ -134,22 +129,17 @@ let x=(e.clientX-rect.left-offsetX)/scale
 let y=(e.clientY-rect.top-offsetY)/scale
 
 points.push({x,y})
-
-ctx.fillStyle="red"
-ctx.beginPath()
-ctx.arc(x,y,5,0,2*Math.PI)
-ctx.fill()
+draw()
 
 if(points.length==4){
 analyze()
 }
-}
-}
+})
 
 // ================= ANALYSIS =================
 function analyze(){
 
-let name = document.getElementById("customName").value || images[current].name
+let name=document.getElementById("customName").value||images[current].name
 
 let minX=Math.min(...points.map(p=>p.x))
 let maxX=Math.max(...points.map(p=>p.x))
@@ -186,12 +176,10 @@ gray[i+w-1] +2*gray[i+w] +gray[i+w+1]
 let g=Math.sqrt(gx*gx+gy*gy)
 
 if(g>40){
-
 totalLine++
 
-if(gray[i] < 200){
+if(gray[i]<200){
 chipped++
-
 let idx=i*4
 d[idx]=255
 d[idx+1]=0
@@ -212,11 +200,7 @@ if(perc>40) iso=5
 
 ctx.putImageData(imgData,minX,minY)
 
-results.push({
-name,
-chipping:perc.toFixed(2),
-iso
-})
+results.push({name,chipping:perc.toFixed(2),iso})
 
 document.getElementById("results").innerHTML+=`
 <p><b>${name}</b><br>
@@ -224,9 +208,7 @@ Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</p>
 `
 
 current++
-if(current<images.length){
-loadImage()
-}
+if(current<images.length) loadImage()
 }
 
 // ================= EXPORT =================
@@ -234,7 +216,7 @@ function exportExcel(){
 let wb=XLSX.utils.book_new()
 let ws=XLSX.utils.json_to_sheet(results)
 XLSX.utils.book_append_sheet(wb,ws,"Chipping")
-XLSX.writeFile(wb,"chipping_report.xlsx")
+XLSX.writeFile(wb,"chipping.xlsx")
 }
 
 </script>
