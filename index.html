@@ -1,21 +1,54 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V2</title>
+  <title>Chipping Tool PRO V2.1</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <style>
-    body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5; }
-    canvas { max-width:100%; margin-top:10px; }
-    button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 15px;
+      background: #f5f5f5;
+    }
+
+    h2 { margin-bottom: 10px; }
+
+    input {
+      margin: 8px;
+      padding: 8px;
+    }
+
+    canvas {
+      max-width: 100%;
+      margin-top: 10px;
+      border-radius: 10px;
+    }
+
+    button {
+      padding: 10px;
+      margin: 10px;
+      background: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    #result {
+      margin-top: 15px;
+      font-size: 18px;
+      font-weight: bold;
+      white-space: pre-line;
+    }
   </style>
 </head>
 
 <body>
 
-<h2>Chipping Tool PRO V2</h2>
+<h2>Chipping Tool PRO V2.1</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -46,7 +79,10 @@ function handle(input){
   reader.readAsDataURL(file);
 }
 
-// 🔬 ANALISI CON LINEE GLOBALI
+
+// ==========================
+// 🔬 ANALISI PRINCIPALE
+// ==========================
 function analyze(img, name){
 
   const canvas = document.getElementById("canvas");
@@ -65,7 +101,9 @@ function analyze(img, name){
 
   let lineMap = new Array(w*h).fill(0);
 
-  // 🔍 STEP 1: trova punti linea (robusto)
+  // ==========================
+  // STEP 1: DETECT LINEE
+  // ==========================
   for(let y=2; y<h-2; y++){
     for(let x=2; x<w-2; x++){
 
@@ -82,13 +120,13 @@ function analyze(img, name){
     }
   }
 
-  // 🔥 STEP 2: espansione linee (collega segmenti)
+  // ==========================
+  // STEP 2: ESPANSIONE LINEE
+  // ==========================
   for(let y=2; y<h-2; y++){
     for(let x=2; x<w-2; x++){
 
-      let idx = y*w + x;
-
-      if(lineMap[idx]){
+      if(lineMap[y*w + x]){
         for(let dy=-1; dy<=1; dy++){
           for(let dx=-1; dx<=1; dx++){
             lineMap[(y+dy)*w + (x+dx)] = 1;
@@ -98,7 +136,9 @@ function analyze(img, name){
     }
   }
 
-  // 🎯 STEP 3: trova centro reale
+  // ==========================
+  // STEP 3: CENTRO REALE
+  // ==========================
   let xs=[], ys=[];
   for(let i=0;i<lineMap.length;i++){
     if(lineMap[i]){
@@ -110,11 +150,14 @@ function analyze(img, name){
   let cx = xs.reduce((a,b)=>a+b,0)/xs.length;
   let cy = ys.reduce((a,b)=>a+b,0)/ys.length;
 
-  let edges=0, broken=0;
+  let edges = 0;
+  let broken = 0;
 
-  // 🔥 STEP 4: analizza SOLO linee centrali
-  for(let y=0; y<h; y++){
-    for(let x=0; x<w; x++){
+  // ==========================
+  // STEP 4: ANALISI LINEE (FIX)
+  // ==========================
+  for(let y=2; y<h-2; y++){
+    for(let x=2; x<w-2; x++){
 
       let idx = y*w + x;
 
@@ -124,15 +167,22 @@ function analyze(img, name){
       if(Math.abs(x-cx)>w*0.15 || Math.abs(y-cy)>h*0.15) continue;
 
       let i = idx*4;
+
       let g = (data[i]+data[i+1]+data[i+2])/3;
+
+      let left  = (data[i-4]+data[i-3]+data[i-2])/3;
+      let right = (data[i+4]+data[i+5]+data[i+6])/3;
+
+      let diff = Math.abs(left - right);
 
       edges++;
 
-      if(g > 170){
+      // 🔥 CRITERIO CORRETTO
+      if(diff > 25){
         broken++;
-        data[i]=255; data[i+1]=0; data[i+2]=0;
+        data[i]=255; data[i+1]=0; data[i+2]=0; // rosso difetto
       } else {
-        data[i]=0; data[i+1]=255; data[i+2]=0;
+        data[i]=0; data[i+1]=255; data[i+2]=0; // verde OK
       }
     }
   }
@@ -145,14 +195,26 @@ function analyze(img, name){
     `${name}
 Chipping: ${chipping.toFixed(2)} %`;
 
-  results.push({name, chipping});
+  results.push({image: name, chipping: chipping.toFixed(2)});
 }
 
+
+// ==========================
+// 📊 EXPORT EXCEL
+// ==========================
 function exportExcel(){
+
+  if(results.length === 0){
+    alert("Nessun dato");
+    return;
+  }
+
   let ws = XLSX.utils.json_to_sheet(results);
   let wb = XLSX.utils.book_new();
+
   XLSX.utils.book_append_sheet(wb, ws, "Results");
-  XLSX.writeFile(wb, "results.xlsx");
+
+  XLSX.writeFile(wb, "ChippingResults.xlsx");
 }
 
 </script>
