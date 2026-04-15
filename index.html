@@ -1,54 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V2.1</title>
+  <title>Chipping Tool PRO V3</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      padding: 15px;
-      background: #f5f5f5;
-    }
-
-    h2 { margin-bottom: 10px; }
-
-    input {
-      margin: 8px;
-      padding: 8px;
-    }
-
-    canvas {
-      max-width: 100%;
-      margin-top: 10px;
-      border-radius: 10px;
-    }
-
-    button {
-      padding: 10px;
-      margin: 10px;
-      background: #007BFF;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-
-    #result {
-      margin-top: 15px;
-      font-size: 18px;
-      font-weight: bold;
-      white-space: pre-line;
-    }
+    body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5; }
+    canvas { max-width:100%; margin-top:10px; }
+    button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
   </style>
 </head>
 
 <body>
 
-<h2>Chipping Tool PRO V2.1</h2>
+<h2>Chipping Tool PRO V3</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -79,10 +45,9 @@ function handle(input){
   reader.readAsDataURL(file);
 }
 
-
-// ==========================
-// 🔬 ANALISI PRINCIPALE
-// ==========================
+// =====================
+// ANALISI SERIA
+// =====================
 function analyze(img, name){
 
   const canvas = document.getElementById("canvas");
@@ -93,128 +58,132 @@ function analyze(img, name){
 
   ctx.drawImage(img,0,0);
 
-  let imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  let data = imageData.data;
-
   let w = canvas.width;
   let h = canvas.height;
 
-  let lineMap = new Array(w*h).fill(0);
+  let imgData = ctx.getImageData(0,0,w,h);
+  let d = imgData.data;
 
-  // ==========================
-  // STEP 1: DETECT LINEE
-  // ==========================
-  for(let y=2; y<h-2; y++){
-    for(let x=2; x<w-2; x++){
+  let edgeMap = new Array(w*h).fill(0);
 
-      let i = (y*w + x)*4;
+  // 🔍 SOBEL EDGE
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
 
-      let gx = Math.abs(data[i+4] - data[i-4]);
-      let gy = Math.abs(data[i+w*4] - data[i-w*4]);
+      let i = (y*w+x)*4;
 
-      let grad = gx + gy;
+      let g =
+        (d[i]+d[i+1]+d[i+2])/3;
 
-      if(grad > 60){
-        lineMap[y*w + x] = 1;
+      let gx =
+        ((d[i+4]+d[i+5]+d[i+6]) - (d[i-4]+d[i-3]+d[i-2]));
+
+      let gy =
+        ((d[i+w*4]+d[i+w*4+1]+d[i+w*4+2]) -
+         (d[i-w*4]+d[i-w*4+1]+d[i-w*4+2]));
+
+      let grad = Math.abs(gx)+Math.abs(gy);
+
+      if(grad>60){
+        edgeMap[y*w+x]=1;
       }
     }
   }
 
-  // ==========================
-  // STEP 2: ESPANSIONE LINEE
-  // ==========================
-  for(let y=2; y<h-2; y++){
-    for(let x=2; x<w-2; x++){
+  // 📊 PROIEZIONI
+  let colSum = new Array(w).fill(0);
+  let rowSum = new Array(h).fill(0);
 
-      if(lineMap[y*w + x]){
-        for(let dy=-1; dy<=1; dy++){
-          for(let dx=-1; dx<=1; dx++){
-            lineMap[(y+dy)*w + (x+dx)] = 1;
-          }
-        }
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      if(edgeMap[y*w+x]){
+        colSum[x]++;
+        rowSum[y]++;
       }
     }
   }
 
-  // ==========================
-  // STEP 3: CENTRO REALE
-  // ==========================
-  let xs=[], ys=[];
-  for(let i=0;i<lineMap.length;i++){
-    if(lineMap[i]){
-      xs.push(i%w);
-      ys.push(Math.floor(i/w));
+  // 🔥 TROVA PICCHI (linee)
+  function findPeaks(arr, threshold){
+    let peaks=[];
+    for(let i=1;i<arr.length-1;i++){
+      if(arr[i]>threshold && arr[i]>arr[i-1] && arr[i]>arr[i+1]){
+        peaks.push(i);
+      }
     }
+    return peaks;
   }
 
-  let cx = xs.reduce((a,b)=>a+b,0)/xs.length;
-  let cy = ys.reduce((a,b)=>a+b,0)/ys.length;
+  let vLines = findPeaks(colSum, Math.max(...colSum)*0.3);
+  let hLines = findPeaks(rowSum, Math.max(...rowSum)*0.3);
 
-  let edges = 0;
-  let broken = 0;
+  // 🎯 PRENDI SOLO LE 6 CENTRALI
+  function middle6(arr){
+    let mid = Math.floor(arr.length/2);
+    return arr.slice(mid-3, mid+3);
+  }
 
-  // ==========================
-  // STEP 4: ANALISI LINEE (FIX)
-  // ==========================
-  for(let y=2; y<h-2; y++){
-    for(let x=2; x<w-2; x++){
+  vLines = middle6(vLines);
+  hLines = middle6(hLines);
 
-      let idx = y*w + x;
+  let edges=0, broken=0;
 
-      if(!lineMap[idx]) continue;
+  // 🔬 ANALISI SOLO SULLE LINEE
+  vLines.forEach(x=>{
+    for(let y=0;y<h;y++){
+      let i = (y*w+x)*4;
 
-      // ROI centrale dinamica
-      if(Math.abs(x-cx)>w*0.15 || Math.abs(y-cy)>h*0.15) continue;
+      let left  = (d[i-4]+d[i-3]+d[i-2])/3;
+      let right = (d[i+4]+d[i+5]+d[i+6])/3;
 
-      let i = idx*4;
-
-      let g = (data[i]+data[i+1]+data[i+2])/3;
-
-      let left  = (data[i-4]+data[i-3]+data[i-2])/3;
-      let right = (data[i+4]+data[i+5]+data[i+6])/3;
-
-      let diff = Math.abs(left - right);
+      let diff = Math.abs(left-right);
 
       edges++;
 
-      // 🔥 CRITERIO CORRETTO
-      if(diff > 25){
+      if(diff>25){
         broken++;
-        data[i]=255; data[i+1]=0; data[i+2]=0; // rosso difetto
+        d[i]=255; d[i+1]=0; d[i+2]=0;
       } else {
-        data[i]=0; data[i+1]=255; data[i+2]=0; // verde OK
+        d[i]=0; d[i+1]=255; d[i+2]=0;
       }
     }
-  }
+  });
 
-  ctx.putImageData(imageData,0,0);
+  hLines.forEach(y=>{
+    for(let x=0;x<w;x++){
+      let i = (y*w+x)*4;
 
-  let chipping = (broken / edges) * 100;
+      let up   = (d[i-w*4]+d[i-w*4+1]+d[i-w*4+2])/3;
+      let down = (d[i+w*4]+d[i+w*4+1]+d[i+w*4+2])/3;
+
+      let diff = Math.abs(up-down);
+
+      edges++;
+
+      if(diff>25){
+        broken++;
+        d[i]=255; d[i+1]=0; d[i+2]=0;
+      } else {
+        d[i]=0; d[i+1]=255; d[i+2]=0;
+      }
+    }
+  });
+
+  ctx.putImageData(imgData,0,0);
+
+  let chipping = (broken/edges)*100;
 
   document.getElementById("result").innerText =
-    `${name}
-Chipping: ${chipping.toFixed(2)} %`;
+    `${name}\nChipping: ${chipping.toFixed(2)} %`;
 
-  results.push({image: name, chipping: chipping.toFixed(2)});
+  results.push({name, chipping});
 }
 
-
-// ==========================
-// 📊 EXPORT EXCEL
-// ==========================
 function exportExcel(){
-
-  if(results.length === 0){
-    alert("Nessun dato");
-    return;
-  }
-
   let ws = XLSX.utils.json_to_sheet(results);
   let wb = XLSX.utils.book_new();
-
   XLSX.utils.book_append_sheet(wb, ws, "Results");
-
-  XLSX.writeFile(wb, "ChippingResults.xlsx");
+  XLSX.writeFile(wb, "results.xlsx");
 }
 
 </script>
