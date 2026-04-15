@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V16</title>
+<title>Chipping Tool PRO V17</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -10,14 +10,25 @@
 body{font-family:Arial;text-align:center;background:#f5f5f5}
 canvas{max-width:95%;border-radius:12px;margin-top:10px;touch-action:none}
 button{padding:10px 20px;margin:10px;font-size:16px;border-radius:8px;border:none;background:#007bff;color:#fff}
+select{padding:8px;margin:10px;font-size:16px;border-radius:8px}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V16</h1>
+<h1>Chipping Tool PRO V17</h1>
 
 <input type="file" id="files" multiple accept="image/*"><br>
+
+<label>Modalità:</label>
+<select id="mode">
+<option value="25">Sensibile</option>
+<option value="40" selected>Bilanciato</option>
+<option value="55">Severo</option>
+</select>
+
+<br>
+
 <button onclick="exportExcel()">Export Excel</button>
 
 <canvas id="canvas"></canvas>
@@ -34,7 +45,7 @@ let current=0
 let points=[]
 let results=[]
 
-// ================= LOAD IMAGES =================
+// ================= LOAD =================
 document.getElementById("files").onchange=e=>{
 images=[...e.target.files]
 current=0
@@ -52,7 +63,7 @@ points=[]
 img.src=URL.createObjectURL(images[current])
 }
 
-// ================= CLICK 4 POINTS =================
+// ================= CLICK =================
 canvas.onclick=e=>{
 if(points.length<4){
 let rect=canvas.getBoundingClientRect()
@@ -75,6 +86,8 @@ analyze()
 // ================= ANALYSIS =================
 function analyze(){
 
+let threshold = parseInt(document.getElementById("mode").value)
+
 let minX=Math.min(...points.map(p=>p.x))
 let maxX=Math.max(...points.map(p=>p.x))
 let minY=Math.min(...points.map(p=>p.y))
@@ -95,19 +108,21 @@ let r=d[i]
 let g=d[i+1]
 let b=d[i+2]
 
-// luminanza
 let gray=(r+g+b)/3
 
-// rilevo LINEA (bianco brillante)
-if(gray>200){
+// filtro base (toglie rumore fondo)
+if(gray < 180) continue
+
+// linea vera
+if(gray > 210){
 
 totalLine++
 
-// variazione = possibile chipping
-let diff=Math.abs(r-g)+Math.abs(g-b)+Math.abs(r-b)
+let darkness = 255 - gray
 
-if(diff>35 || gray<230){
+if(darkness > threshold){
 chipped++
+
 d[i]=255
 d[i+1]=0
 d[i+2]=0
@@ -115,7 +130,6 @@ d[i+2]=0
 }
 }
 
-// evita NaN
 let perc = totalLine>0 ? (chipped/totalLine)*100 : 0
 
 // ISO
@@ -131,17 +145,18 @@ ctx.putImageData(imgData,minX,minY)
 // salva
 results.push({
 name:images[current].name,
+mode:document.getElementById("mode").selectedOptions[0].text,
 chipping:perc.toFixed(2),
 iso
 })
 
-// mostra
+// output
 document.getElementById("results").innerHTML+=`
 <p><b>${images[current].name}</b><br>
+Mode: ${document.getElementById("mode").selectedOptions[0].text}<br>
 Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</p>
 `
 
-// prossima immagine
 current++
 if(current<images.length){
 loadImage()
