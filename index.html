@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V18 AUTO</title>
+<title>Chipping Tool PRO V19</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -15,13 +15,12 @@ button{padding:10px 20px;margin:10px;font-size:16px;border-radius:8px;border:non
 
 <body>
 
-<h1>Chipping Tool PRO V18 AUTO</h1>
+<h1>Chipping Tool PRO V19</h1>
 
 <input type="file" id="files" multiple accept="image/*"><br>
 <button onclick="exportExcel()">Export Excel</button>
 
 <canvas id="canvas"></canvas>
-
 <div id="results"></div>
 
 <script>
@@ -34,7 +33,7 @@ let current=0
 let points=[]
 let results=[]
 
-// ================= LOAD =================
+// LOAD
 document.getElementById("files").onchange=e=>{
 images=[...e.target.files]
 current=0
@@ -52,7 +51,7 @@ points=[]
 img.src=URL.createObjectURL(images[current])
 }
 
-// ================= CLICK =================
+// CLICK AREA
 canvas.onclick=e=>{
 if(points.length<4){
 let rect=canvas.getBoundingClientRect()
@@ -72,7 +71,7 @@ analyze()
 }
 }
 
-// ================= ANALYSIS =================
+// ANALYSIS
 function analyze(){
 
 let minX=Math.min(...points.map(p=>p.x))
@@ -89,49 +88,45 @@ let d=imgData.data
 let totalLine=0
 let chipped=0
 
-let sumGray=0
-let countGray=0
-
-// ================= STEP 1: trova luminosità linea =================
+// CONVERT TO GRAYSCALE
+let gray=[]
 for(let i=0;i<d.length;i+=4){
-
-let gray=(d[i]+d[i+1]+d[i+2])/3
-
-if(gray>200){
-sumGray+=gray
-countGray++
-}
+gray.push((d[i]+d[i+1]+d[i+2])/3)
 }
 
-let avgGray = countGray>0 ? sumGray/countGray : 230
+// EDGE DETECTION (SIMPLE SOBEL)
+for(let y=1;y<h-1;y++){
+for(let x=1;x<w-1;x++){
 
-// ================= AUTO THRESHOLD =================
-let threshold = (255 - avgGray) + 25
-// adattivo: più la linea è scura → più tollerante
+let i=y*w+x
 
-// ================= STEP 2: calcolo chipping =================
-for(let i=0;i<d.length;i+=4){
+let gx =
+-gray[i-w-1] -2*gray[i-1] -gray[i+w-1] +
+gray[i-w+1] +2*gray[i+1] +gray[i+w+1]
 
-let r=d[i]
-let g=d[i+1]
-let b=d[i+2]
+let gy =
+-gray[i-w-1] -2*gray[i-w] -gray[i-w+1] +
+gray[i+w-1] +2*gray[i+w] +gray[i+w+1]
 
-let gray=(r+g+b)/3
+let g=Math.sqrt(gx*gx+gy*gy)
 
-if(gray < 180) continue
-
-if(gray > 200){
+// PIXEL È LINEA
+if(g>40){
 
 totalLine++
 
-let darkness = 255 - gray
+// verifica continuità linea
+let center=gray[i]
 
-if(darkness > threshold){
+// se troppo scuro → difetto
+if(center < 200){
 chipped++
 
-d[i]=255
-d[i+1]=0
-d[i+2]=0
+let idx=i*4
+d[idx]=255
+d[idx+1]=0
+d[idx+2]=0
+}
 }
 }
 }
@@ -148,14 +143,14 @@ if(perc>40) iso=5
 
 ctx.putImageData(imgData,minX,minY)
 
-// salva
+// SAVE
 results.push({
 name:images[current].name,
 chipping:perc.toFixed(2),
 iso
 })
 
-// output
+// OUTPUT
 document.getElementById("results").innerHTML+=`
 <p><b>${images[current].name}</b><br>
 Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</p>
@@ -167,14 +162,11 @@ loadImage()
 }
 }
 
-// ================= EXPORT =================
+// EXPORT
 function exportExcel(){
-
 let wb=XLSX.utils.book_new()
 let ws=XLSX.utils.json_to_sheet(results)
-
 XLSX.utils.book_append_sheet(wb,ws,"Chipping")
-
 XLSX.writeFile(wb,"chipping_report.xlsx")
 }
 
