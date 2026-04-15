@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V3</title>
+  <title>Chipping Tool PRO V4</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -14,7 +14,7 @@
 
 <body>
 
-<h2>Chipping Tool PRO V3</h2>
+<h2>Chipping Tool PRO V4</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -29,10 +29,10 @@
 
 let results = [];
 
-document.getElementById("gallery").addEventListener("change", e => handle(e.target));
-document.getElementById("camera").addEventListener("change", e => handle(e.target));
+document.getElementById("gallery").addEventListener("change", e => load(e.target));
+document.getElementById("camera").addEventListener("change", e => load(e.target));
 
-function handle(input){
+function load(input){
   const file = input.files[0];
   if(!file) return;
 
@@ -45,9 +45,6 @@ function handle(input){
   reader.readAsDataURL(file);
 }
 
-// =====================
-// ANALISI SERIA
-// =====================
 function analyze(img, name){
 
   const canvas = document.getElementById("canvas");
@@ -61,132 +58,134 @@ function analyze(img, name){
   let w = canvas.width;
   let h = canvas.height;
 
-  let imgData = ctx.getImageData(0,0,w,h);
-  let d = imgData.data;
+  let data = ctx.getImageData(0,0,w,h).data;
 
-  let edgeMap = new Array(w*h).fill(0);
+  // ==========================
+  // STEP 1: EDGE MAP
+  // ==========================
+  let edge = new Array(w*h).fill(0);
 
-  // 🔍 SOBEL EDGE
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
 
-      let i = (y*w+x)*4;
+      let i=(y*w+x)*4;
 
-      let g =
-        (d[i]+d[i+1]+d[i+2])/3;
+      let gx = Math.abs(data[i+4]-data[i-4]);
+      let gy = Math.abs(data[i+w*4]-data[i-w*4]);
 
-      let gx =
-        ((d[i+4]+d[i+5]+d[i+6]) - (d[i-4]+d[i-3]+d[i-2]));
-
-      let gy =
-        ((d[i+w*4]+d[i+w*4+1]+d[i+w*4+2]) -
-         (d[i-w*4]+d[i-w*4+1]+d[i-w*4+2]));
-
-      let grad = Math.abs(gx)+Math.abs(gy);
-
-      if(grad>60){
-        edgeMap[y*w+x]=1;
+      if(gx+gy > 50){
+        edge[y*w+x]=1;
       }
     }
   }
 
-  // 📊 PROIEZIONI
-  let colSum = new Array(w).fill(0);
-  let rowSum = new Array(h).fill(0);
+  // ==========================
+  // STEP 2: PROIEZIONI
+  // ==========================
+  let col = new Array(w).fill(0);
+  let row = new Array(h).fill(0);
 
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
-      if(edgeMap[y*w+x]){
-        colSum[x]++;
-        rowSum[y]++;
+      if(edge[y*w+x]){
+        col[x]++;
+        row[y]++;
       }
     }
   }
 
-  // 🔥 TROVA PICCHI (linee)
-  function findPeaks(arr, threshold){
-    let peaks=[];
-    for(let i=1;i<arr.length-1;i++){
-      if(arr[i]>threshold && arr[i]>arr[i-1] && arr[i]>arr[i+1]){
-        peaks.push(i);
+  // ==========================
+  // STEP 3: SMOOTH
+  // ==========================
+  function smooth(arr){
+    let out = [...arr];
+    for(let i=2;i<arr.length-2;i++){
+      out[i]=(arr[i-2]+arr[i-1]+arr[i]+arr[i+1]+arr[i+2])/5;
+    }
+    return out;
+  }
+
+  col = smooth(col);
+  row = smooth(row);
+
+  // ==========================
+  // STEP 4: PEAK DETECTION
+  // ==========================
+  function peaks(arr){
+    let p=[];
+    let max=Math.max(...arr);
+    for(let i=2;i<arr.length-2;i++){
+      if(arr[i]>max*0.4 && arr[i]>arr[i-1] && arr[i]>arr[i+1]){
+        p.push(i);
       }
     }
-    return peaks;
+    return p;
   }
 
-  let vLines = findPeaks(colSum, Math.max(...colSum)*0.3);
-  let hLines = findPeaks(rowSum, Math.max(...rowSum)*0.3);
+  let v = peaks(col);
+  let hL = peaks(row);
 
-  // 🎯 PRENDI SOLO LE 6 CENTRALI
-  function middle6(arr){
-    let mid = Math.floor(arr.length/2);
-    return arr.slice(mid-3, mid+3);
+  // ==========================
+  // STEP 5: PRENDI CENTRO 6x6
+  // ==========================
+  function center6(a){
+    let mid=Math.floor(a.length/2);
+    return a.slice(mid-3,mid+3);
   }
 
-  vLines = middle6(vLines);
-  hLines = middle6(hLines);
+  v=center6(v);
+  hL=center6(hL);
 
   let edges=0, broken=0;
 
-  // 🔬 ANALISI SOLO SULLE LINEE
-  vLines.forEach(x=>{
+  // ==========================
+  // STEP 6: ANALISI LINEE
+  // ==========================
+  v.forEach(x=>{
     for(let y=0;y<h;y++){
-      let i = (y*w+x)*4;
 
-      let left  = (d[i-4]+d[i-3]+d[i-2])/3;
-      let right = (d[i+4]+d[i+5]+d[i+6])/3;
+      let i=(y*w+x)*4;
 
-      let diff = Math.abs(left-right);
+      let l=(data[i-4]+data[i-3]+data[i-2])/3;
+      let r=(data[i+4]+data[i+5]+data[i+6])/3;
+
+      let diff=Math.abs(l-r);
 
       edges++;
 
-      if(diff>25){
+      if(diff>30){
         broken++;
-        d[i]=255; d[i+1]=0; d[i+2]=0;
+        data[i]=255; data[i+1]=0; data[i+2]=0;
       } else {
-        d[i]=0; d[i+1]=255; d[i+2]=0;
+        data[i]=0; data[i+1]=255; data[i+2]=0;
       }
     }
   });
 
-  hLines.forEach(y=>{
+  hL.forEach(y=>{
     for(let x=0;x<w;x++){
-      let i = (y*w+x)*4;
 
-      let up   = (d[i-w*4]+d[i-w*4+1]+d[i-w*4+2])/3;
-      let down = (d[i+w*4]+d[i+w*4+1]+d[i+w*4+2])/3;
+      let i=(y*w+x)*4;
 
-      let diff = Math.abs(up-down);
+      let u=(data[i-w*4]+data[i-w*4+1]+data[i-w*4+2])/3;
+      let d=(data[i+w*4]+data[i+w*4+1]+data[i+w*4+2])/3;
+
+      let diff=Math.abs(u-d);
 
       edges++;
 
-      if(diff>25){
+      if(diff>30){
         broken++;
-        d[i]=255; d[i+1]=0; d[i+2]=0;
+        data[i]=255; data[i+1]=0; data[i+2]=0;
       } else {
-        d[i]=0; d[i+1]=255; d[i+2]=0;
+        data[i]=0; data[i+1]=255; data[i+2]=0;
       }
     }
   });
 
-  ctx.putImageData(imgData,0,0);
+  ctx.putImageData(new ImageData(data,w,h),0,0);
 
-  let chipping = (broken/edges)*100;
+  let chipping=(broken/edges)*100;
 
   document.getElementById("result").innerText =
-    `${name}\nChipping: ${chipping.toFixed(2)} %`;
-
-  results.push({name, chipping});
-}
-
-function exportExcel(){
-  let ws = XLSX.utils.json_to_sheet(results);
-  let wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Results");
-  XLSX.writeFile(wb, "results.xlsx");
-}
-
-</script>
-
-</body>
-</html>
+    `${
