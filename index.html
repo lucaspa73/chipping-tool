@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V17</title>
+<title>Chipping Tool PRO V18 AUTO</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -10,25 +10,14 @@
 body{font-family:Arial;text-align:center;background:#f5f5f5}
 canvas{max-width:95%;border-radius:12px;margin-top:10px;touch-action:none}
 button{padding:10px 20px;margin:10px;font-size:16px;border-radius:8px;border:none;background:#007bff;color:#fff}
-select{padding:8px;margin:10px;font-size:16px;border-radius:8px}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V17</h1>
+<h1>Chipping Tool PRO V18 AUTO</h1>
 
 <input type="file" id="files" multiple accept="image/*"><br>
-
-<label>Modalità:</label>
-<select id="mode">
-<option value="25">Sensibile</option>
-<option value="40" selected>Bilanciato</option>
-<option value="55">Severo</option>
-</select>
-
-<br>
-
 <button onclick="exportExcel()">Export Excel</button>
 
 <canvas id="canvas"></canvas>
@@ -86,8 +75,6 @@ analyze()
 // ================= ANALYSIS =================
 function analyze(){
 
-let threshold = parseInt(document.getElementById("mode").value)
-
 let minX=Math.min(...points.map(p=>p.x))
 let maxX=Math.max(...points.map(p=>p.x))
 let minY=Math.min(...points.map(p=>p.y))
@@ -102,6 +89,27 @@ let d=imgData.data
 let totalLine=0
 let chipped=0
 
+let sumGray=0
+let countGray=0
+
+// ================= STEP 1: trova luminosità linea =================
+for(let i=0;i<d.length;i+=4){
+
+let gray=(d[i]+d[i+1]+d[i+2])/3
+
+if(gray>200){
+sumGray+=gray
+countGray++
+}
+}
+
+let avgGray = countGray>0 ? sumGray/countGray : 230
+
+// ================= AUTO THRESHOLD =================
+let threshold = (255 - avgGray) + 25
+// adattivo: più la linea è scura → più tollerante
+
+// ================= STEP 2: calcolo chipping =================
 for(let i=0;i<d.length;i+=4){
 
 let r=d[i]
@@ -110,11 +118,9 @@ let b=d[i+2]
 
 let gray=(r+g+b)/3
 
-// filtro base (toglie rumore fondo)
 if(gray < 180) continue
 
-// linea vera
-if(gray > 210){
+if(gray > 200){
 
 totalLine++
 
@@ -145,7 +151,6 @@ ctx.putImageData(imgData,minX,minY)
 // salva
 results.push({
 name:images[current].name,
-mode:document.getElementById("mode").selectedOptions[0].text,
 chipping:perc.toFixed(2),
 iso
 })
@@ -153,7 +158,6 @@ iso
 // output
 document.getElementById("results").innerHTML+=`
 <p><b>${images[current].name}</b><br>
-Mode: ${document.getElementById("mode").selectedOptions[0].text}<br>
 Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</p>
 `
 
