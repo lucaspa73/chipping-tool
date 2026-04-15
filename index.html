@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V4.1</title>
+  <title>Chipping Tool PRO V5</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -15,7 +15,7 @@
 
 <body>
 
-<h2>Chipping Tool PRO V4.1</h2>
+<h2>Chipping Tool PRO V5</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -41,14 +41,7 @@ function load(input){
   reader.onload = e=>{
     const img = new Image();
     img.src = e.target.result;
-    img.onload = ()=> {
-      try {
-        analyze(img, file.name);
-      } catch(err){
-        document.getElementById("result").innerText = "Errore analisi";
-        console.error(err);
-      }
-    };
+    img.onload = ()=> analyze(img, file.name);
   };
   reader.readAsDataURL(file);
 }
@@ -69,133 +62,88 @@ function analyze(img, name){
   let imgData = ctx.getImageData(0,0,w,h);
   let d = imgData.data;
 
-  let edge = new Array(w*h).fill(0);
+  let lineMap = new Array(w*h).fill(0);
 
-  // EDGE
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
+  // 🔍 DETECT LINEE (robusto)
+  for(let y=2;y<h-2;y++){
+    for(let x=2;x<w-2;x++){
 
       let i=(y*w+x)*4;
 
-      let gx = Math.abs(d[i+4]-d[i-4]);
-      let gy = Math.abs(d[i+w*4]-d[i-w*4]);
+      let gx=Math.abs(d[i+4]-d[i-4]);
+      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
 
-      if(gx+gy > 50){
-        edge[y*w+x]=1;
+      if(gx+gy>50){
+        lineMap[y*w+x]=1;
       }
     }
   }
 
-  // PROIEZIONI
-  let col = new Array(w).fill(0);
-  let row = new Array(h).fill(0);
+  // 🔥 ESPANSIONE (connette linee)
+  for(let y=2;y<h-2;y++){
+    for(let x=2;x<w-2;x++){
 
-  for(let y=0;y<h;y++){
-    for(let x=0;x<w;x++){
-      if(edge[y*w+x]){
-        col[x]++;
-        row[y]++;
+      if(lineMap[y*w+x]){
+        for(let dy=-1;dy<=1;dy++){
+          for(let dx=-1;dx<=1;dx++){
+            lineMap[(y+dy)*w+(x+dx)]=1;
+          }
+        }
       }
     }
   }
 
-  // SMOOTH
-  function smooth(arr){
-    let out=[...arr];
-    for(let i=2;i<arr.length-2;i++){
-      out[i]=(arr[i-2]+arr[i-1]+arr[i]+arr[i+1]+arr[i+2])/5;
+  // 🎯 CENTRO REALE
+  let xs=[], ys=[];
+  for(let i=0;i<lineMap.length;i++){
+    if(lineMap[i]){
+      xs.push(i%w);
+      ys.push(Math.floor(i/w));
     }
-    return out;
   }
 
-  col = smooth(col);
-  row = smooth(row);
-
-  // PEAKS
-  function peaks(arr){
-    let p=[];
-    let max=Math.max(...arr);
-    if(max===0) return p;
-
-    for(let i=2;i<arr.length-2;i++){
-      if(arr[i]>max*0.4 && arr[i]>arr[i-1] && arr[i]>arr[i+1]){
-        p.push(i);
-      }
-    }
-    return p;
-  }
-
-  let v = peaks(col);
-  let hL = peaks(row);
-
-  // FALLBACK (se non trova linee)
-  if(v.length < 6 || hL.length < 6){
-    document.getElementById("result").innerText =
-      "Linee non rilevate correttamente";
-    return;
-  }
-
-  function center6(a){
-    let mid=Math.floor(a.length/2);
-    return a.slice(mid-3,mid+3);
-  }
-
-  v=center6(v);
-  hL=center6(hL);
+  let cx = xs.reduce((a,b)=>a+b,0)/xs.length;
+  let cy = ys.reduce((a,b)=>a+b,0)/ys.length;
 
   let edges=0, broken=0;
 
-  // ANALISI SICURA
-  v.forEach(x=>{
-    for(let y=1;y<h-1;y++){
+  // 🔬 ANALISI (AREA CENTRALE PIÙ AMPIA)
+  for(let y=2;y<h-2;y++){
+    for(let x=2;x<w-2;x++){
 
-      let i=(y*w+x)*4;
+      let idx=y*w+x;
 
-      let l=(d[i-4]+d[i-3]+d[i-2])/3;
-      let r=(d[i+4]+d[i+5]+d[i+6])/3;
+      if(!lineMap[idx]) continue;
 
-      let diff=Math.abs(l-r);
+      // ROI centrale più larga (chiave!)
+      if(Math.abs(x-cx)>w*0.25 || Math.abs(y-cy)>h*0.25) continue;
+
+      let i=idx*4;
+
+      let left=(d[i-4]+d[i-3]+d[i-2])/3;
+      let right=(d[i+4]+d[i+5]+d[i+6])/3;
+
+      let diff=Math.abs(left-right);
 
       edges++;
 
-      if(diff>30){
+      if(diff>25){
         broken++;
         d[i]=255; d[i+1]=0; d[i+2]=0;
       } else {
         d[i]=0; d[i+1]=255; d[i+2]=0;
       }
     }
-  });
-
-  hL.forEach(y=>{
-    for(let x=1;x<w-1;x++){
-
-      let i=(y*w+x)*4;
-
-      let u=(d[i-w*4]+d[i-w*4+1]+d[i-w*4+2])/3;
-      let dn=(d[i+w*4]+d[i+w*4+1]+d[i+w*4+2])/3;
-
-      let diff=Math.abs(u-dn);
-
-      edges++;
-
-      if(diff>30){
-        broken++;
-        d[i]=255; d[i+1]=0; d[i+2]=0;
-      } else {
-        d[i]=0; d[i+1]=255; d[i+2]=0;
-      }
-    }
-  });
+  }
 
   ctx.putImageData(imgData,0,0);
 
-  let chipping = (edges>0) ? (broken/edges)*100 : 0;
+  let chipping=(broken/edges)*100;
 
   document.getElementById("result").innerText =
     `${name}\nChipping: ${chipping.toFixed(2)} %`;
 
-  results.push({name, chipping});
+  results.push({name,chipping});
 }
 
 function exportExcel(){
