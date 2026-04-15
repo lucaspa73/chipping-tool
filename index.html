@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V1.1</title>
+  <title>Chipping Tool PRO v1.4</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
@@ -14,7 +14,7 @@
 
 <body>
 
-<h2>Chipping Tool PRO</h2>
+<h2>Chipping Tool PRO V 1.4</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -45,7 +45,7 @@ function handle(input){
   reader.readAsDataURL(file);
 }
 
-// 🔬 ANALISI MIGLIORATA (LINEE REALI)
+// 🔬 ANALISI AVANZATA
 function analyze(img, name){
 
   const canvas = document.getElementById("canvas");
@@ -62,45 +62,55 @@ function analyze(img, name){
   let w = canvas.width;
   let h = canvas.height;
 
-  // ROI più stretto (centro reale)
-  let x1 = Math.floor(w*0.35);
-  let x2 = Math.floor(w*0.65);
-  let y1 = Math.floor(h*0.35);
-  let y2 = Math.floor(h*0.65);
+  let points = [];
 
-  let edges = 0;
-  let broken = 0;
-
-  for(let y=y1+2; y<y2-2; y++){
-    for(let x=x1+2; x<x2-2; x++){
+  // 🔍 EDGE DETECTION ROBUSTO
+  for(let y=2; y<h-2; y++){
+    for(let x=2; x<w-2; x++){
 
       let i = (y*w + x)*4;
 
       let g = (data[i]+data[i+1]+data[i+2])/3;
 
-      // gradienti separati (verticale/orizzontale)
-      let gx = Math.abs((data[i+4] - data[i-4]));
-      let gy = Math.abs((data[i+w*4] - data[i-w*4]));
+      let gx = Math.abs(data[i+4] - data[i-4]);
+      let gy = Math.abs(data[i+w*4] - data[i-w*4]);
 
-      // filtro linee vere (non rumore)
-      if((gx > 40 && gy < 20) || (gy > 40 && gx < 20)){
+      let grad = gx + gy;
 
-        edges++;
-
-        // verifica perdita (contrasto locale)
-        let localAvg =
-          ((data[i-4]+data[i-3]+data[i-2]) +
-           (data[i+4]+data[i+5]+data[i+6])) / 6;
-
-        if(g > localAvg - 5){
-          broken++;
-          data[i]=255; data[i+1]=0; data[i+2]=0; // difetto
-        } else {
-          data[i]=0; data[i+1]=255; data[i+2]=0; // OK
-        }
+      if(grad > 50){
+        points.push({x,y,g});
       }
     }
   }
+
+  // 🎯 TROVA CENTRO REALE
+  let cx = points.reduce((a,p)=>a+p.x,0)/points.length;
+  let cy = points.reduce((a,p)=>a+p.y,0)/points.length;
+
+  // 🔥 PRENDI SOLO ZONA CENTRALE (vera)
+  let central = points.filter(p =>
+    Math.abs(p.x - cx) < w*0.15 &&
+    Math.abs(p.y - cy) < h*0.15
+  );
+
+  let edges = 0;
+  let broken = 0;
+
+  central.forEach(p => {
+
+    let i = (p.y*w + p.x)*4;
+
+    let g = (data[i]+data[i+1]+data[i+2])/3;
+
+    edges++;
+
+    if(g > 170){
+      broken++;
+      data[i]=255; data[i+1]=0; data[i+2]=0;
+    } else {
+      data[i]=0; data[i+1]=255; data[i+2]=0;
+    }
+  });
 
   ctx.putImageData(imageData,0,0);
 
