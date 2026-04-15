@@ -1,21 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V7</title>
+  <title>Chipping Tool PRO V8</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <style>
     body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5;}
-    canvas { max-width:100%; margin-top:10px; }
+    canvas { max-width:100%; margin-top:10px;}
     button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
   </style>
 </head>
 
 <body>
 
-<h2>Chipping Tool PRO V7</h2>
+<h2>Chipping Tool PRO V8</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -64,8 +64,10 @@ function analyze(img,name){
 
   let mask=new Array(w*h).fill(0);
 
+  let grads=[];
+
   // ==========================
-  // STEP 1: SEGMENTAZIONE (come versione buona)
+  // STEP 1: GRADIENT + raccolta stats
   // ==========================
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
@@ -77,17 +79,39 @@ function analyze(img,name){
 
       let grad=gx+gy;
 
-      if(grad>60){
+      grads.push(grad);
+    }
+  }
+
+  // ==========================
+  // STEP 2: SOGLIA ADATTIVA
+  // ==========================
+  grads.sort((a,b)=>a-b);
+  let threshold = grads[Math.floor(grads.length*0.85)];
+
+  // ==========================
+  // STEP 3: SEGMENTAZIONE
+  // ==========================
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+
+      let i=(y*w+x)*4;
+
+      let gx=Math.abs(d[i+4]-d[i-4]);
+      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
+
+      let grad=gx+gy;
+
+      if(grad>threshold){
         mask[y*w+x]=1;
       }
     }
   }
 
   // ==========================
-  // STEP 2: TROVA CENTRO GRIGLIA
+  // STEP 4: CENTRO
   // ==========================
   let xs=[], ys=[];
-
   for(let i=0;i<mask.length;i++){
     if(mask[i]){
       xs.push(i%w);
@@ -101,26 +125,27 @@ function analyze(img,name){
   let edges=0, broken=0;
 
   // ==========================
-  // STEP 3: SOLO QUADRATO CENTRALE
+  // STEP 5: ANALISI CENTRALE
   // ==========================
-  let roiSize = Math.min(w,h)*0.25;
+  let roi = Math.min(w,h)*0.2;
 
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
 
-      if(Math.abs(x-cx)>roiSize || Math.abs(y-cy)>roiSize) continue;
+      if(Math.abs(x-cx)>roi || Math.abs(y-cy)>roi) continue;
 
       let idx=y*w+x;
       if(!mask[idx]) continue;
 
       let i=idx*4;
 
-      let g=(d[i]+d[i+1]+d[i+2])/3;
+      let local =
+        Math.abs(d[i]-d[i+4]) +
+        Math.abs(d[i]-d[i-4]);
 
       edges++;
 
-      // difetto = variazione forte
-      if(g<140){
+      if(local>40){
         broken++;
         d[i]=255; d[i+1]=0; d[i+2]=0;
       } else {
