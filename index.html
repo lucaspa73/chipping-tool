@@ -1,200 +1,189 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-  <title>Chipping Tool PRO V11</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chipping Tool PRO V12</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<style>
+body{
+  font-family: Arial;
+  text-align:center;
+  background:#f5f5f5;
+}
 
-  <style>
-    body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5;}
-    canvas { max-width:100%; margin-top:10px; border-radius:10px;}
-    button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
-    #result { margin-top:15px; font-size:18px; font-weight:bold; white-space:pre-line;}
-  </style>
+h1{
+  margin-top:20px;
+}
+
+.container{
+  margin:20px auto;
+}
+
+canvas{
+  max-width:90%;
+  border-radius:12px;
+  margin-top:15px;
+}
+
+button{
+  padding:12px 20px;
+  font-size:16px;
+  border:none;
+  border-radius:10px;
+  background:#007bff;
+  color:white;
+  margin-top:15px;
+}
+</style>
 </head>
 
 <body>
 
-<h2>Chipping Tool PRO V11</h2>
+<h1>Chipping Tool PRO V12</h1>
 
-<input type="file" accept="image/*" id="gallery">
-<input type="file" accept="image/*" capture="environment" id="camera">
+<input type="file" accept="image/*" id="fileInput">
 
+<div class="container">
 <canvas id="canvas"></canvas>
+</div>
 
-<div id="result">Carica immagine</div>
-
-<button onclick="exportExcel()">📊 Export Excel</button>
+<h2 id="result"></h2>
 
 <script>
 
-let results=[];
+const input = document.getElementById("fileInput");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-document.getElementById("gallery").addEventListener("change", e=>load(e.target));
-document.getElementById("camera").addEventListener("change", e=>load(e.target));
+input.addEventListener("change", e=>{
+  const file = e.target.files[0];
+  const img = new Image();
 
-function load(input){
-  const file=input.files[0];
-  if(!file) return;
+  img.onload = ()=>{
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img,0,0);
 
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const img=new Image();
-    img.src=e.target.result;
-    img.onload=()=>analyze(img,file.name);
-  };
-  reader.readAsDataURL(file);
-}
+    processImage();
+  }
 
-function analyze(img,name){
+  img.src = URL.createObjectURL(file);
+});
 
-  const canvas=document.getElementById("canvas");
-  const ctx=canvas.getContext("2d");
+function processImage(){
 
-  canvas.width=img.width;
-  canvas.height=img.height;
+  let imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
+  let d = imgData.data;
+  let w = canvas.width;
+  let h = canvas.height;
 
-  ctx.drawImage(img,0,0);
+  // GRAYSCALE
+  let gray = new Array(w*h);
+  for(let i=0;i<w*h;i++){
+    gray[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
+  }
 
-  let w=canvas.width;
-  let h=canvas.height;
+  // SOBEL
+  let grad = new Array(w*h).fill(0);
 
-  let imgData=ctx.getImageData(0,0,w,h);
-  let d=imgData.data;
-
-  let mask=new Array(w*h).fill(0);
-  let grads=[];
-
-  // ==========================
-  // STEP 1: gradienti
-  // ==========================
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
 
-      let i=(y*w+x)*4;
+      let gx =
+        -gray[(y-1)*w+(x-1)] -2*gray[y*w+(x-1)] -gray[(y+1)*w+(x-1)]
+        +gray[(y-1)*w+(x+1)] +2*gray[y*w+(x+1)] +gray[(y+1)*w+(x+1)];
 
-      let gx=Math.abs(d[i+4]-d[i-4]);
-      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
+      let gy =
+        -gray[(y-1)*w+(x-1)] -2*gray[(y-1)*w+x] -gray[(y-1)*w+(x+1)]
+        +gray[(y+1)*w+(x-1)] +2*gray[(y+1)*w+x] +gray[(y+1)*w+(x+1)];
 
-      grads.push(gx+gy);
+      grad[y*w+x]=Math.sqrt(gx*gx+gy*gy);
     }
   }
 
-  grads.sort((a,b)=>a-b);
-  let threshold = grads[Math.floor(grads.length*0.85)];
+  // threshold dinamico migliorato
+  let grads = grad.slice().sort((a,b)=>a-b);
+  let threshold = grads[Math.floor(grads.length*0.80)];
 
-  // ==========================
-  // STEP 2: maschera linee
-  // ==========================
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
+  let mask = new Array(w*h).fill(0);
+  for(let i=0;i<w*h;i++){
+    if(grad[i]>threshold) mask[i]=1;
+  }
 
-      let i=(y*w+x)*4;
+  // ROI centrale
+  let startX = Math.floor(w*0.35);
+  let endX   = Math.floor(w*0.65);
+  let startY = Math.floor(h*0.35);
+  let endY   = Math.floor(h*0.65);
 
-      let gx=Math.abs(d[i+4]-d[i-4]);
-      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
+  let total = 0;
+  let broken = 0;
 
-      let grad=gx+gy;
+  for(let y=startY;y<endY;y++){
+    for(let x=startX;x<endX;x++){
 
-      let brightness=(d[i]+d[i+1]+d[i+2])/3;
+      let i = y*w+x;
 
-      if(grad>threshold && brightness < 240){
-        mask[y*w+x]=1;
+      if(mask[i]){
+
+        total++;
+
+        let horiz =
+          mask[y*w+(x-1)] +
+          mask[y*w+(x+1)];
+
+        let vert =
+          mask[(y-1)*w+x] +
+          mask[(y+1)*w+x];
+
+        let isHorizontal = horiz > vert;
+        let continuity = isHorizontal ? horiz : vert;
+
+        let brokenPixel = false;
+
+        // interruzione netta
+        if(continuity === 0){
+          brokenPixel = true;
+        }
+
+        // micro-chipping
+        if(continuity === 1){
+
+          let diag =
+            mask[(y-1)*w+(x-1)] +
+            mask[(y-1)*w+(x+1)] +
+            mask[(y+1)*w+(x-1)] +
+            mask[(y+1)*w+(x+1)];
+
+          if(diag < 2){
+            brokenPixel = true;
+          }
+        }
+
+        if(brokenPixel){
+          broken++;
+          d[i*4]=255;
+          d[i*4+1]=0;
+          d[i*4+2]=0;
+        } else {
+          d[i*4]=0;
+          d[i*4+1]=255;
+          d[i*4+2]=0;
+        }
+
       }
-    }
-  }
 
-  // ==========================
-  // STEP 3: centro ROI
-  // ==========================
-  let xs=[], ys=[];
-  for(let i=0;i<mask.length;i++){
-    if(mask[i]){
-      xs.push(i%w);
-      ys.push(Math.floor(i/w));
-    }
-  }
-
-  if(xs.length===0){
-    document.getElementById("result").innerText="Linee non rilevate";
-    return;
-  }
-
-  let cx=xs.reduce((a,b)=>a+b,0)/xs.length;
-  let cy=ys.reduce((a,b)=>a+b,0)/ys.length;
-
-  let roi = Math.min(w,h)*0.2;
-
-  let edges=0, broken=0;
-
-  // ==========================
-  // STEP 4: continuità direzionale
-  // ==========================
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
-
-      if(Math.abs(x-cx)>roi || Math.abs(y-cy)>roi) continue;
-
-      let idx=y*w+x;
-      if(!mask[idx]) continue;
-
-      let i=idx*4;
-
-      let horiz =
-        mask[y*w+(x-1)] +
-        mask[y*w+(x+1)];
-
-      let vert =
-        mask[(y-1)*w+x] +
-        mask[(y+1)*w+x];
-
-      let isHorizontal = horiz > vert;
-      let continuity = isHorizontal ? horiz : vert;
-
-      edges++;
-
-      if(continuity < 1){
-        broken++;
-        d[i]=255; d[i+1]=0; d[i+2]=0;
-      } else {
-        d[i]=0; d[i+1]=255; d[i+2]=0;
-      }
     }
   }
 
   ctx.putImageData(imgData,0,0);
 
-  if(edges===0){
-    document.getElementById("result").innerText="Errore analisi";
-    return;
-  }
+  let percent = total ? (broken/total*100).toFixed(2) : 0;
 
-  let chipping=(broken/edges)*100;
+  document.getElementById("result").innerHTML =
+    "Chipping: " + percent + " %";
 
-  document.getElementById("result").innerText =
-    `${name}\nChipping: ${chipping.toFixed(2)} %`;
-
-  results.push({name,chipping:chipping.toFixed(2)});
-}
-
-
-// ==========================
-// EXPORT
-// ==========================
-function exportExcel(){
-
-  if(results.length===0){
-    alert("Nessun dato");
-    return;
-  }
-
-  let ws=XLSX.utils.json_to_sheet(results);
-  let wb=XLSX.utils.book_new();
-
-  XLSX.utils.book_append_sheet(wb,ws,"Results");
-
-  XLSX.writeFile(wb,"ChippingResults.xlsx");
 }
 
 </script>
