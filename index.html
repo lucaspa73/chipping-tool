@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V10</title>
+  <title>Chipping Tool PRO V11</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -10,12 +10,13 @@
     body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5;}
     canvas { max-width:100%; margin-top:10px; border-radius:10px;}
     button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
+    #result { margin-top:15px; font-size:18px; font-weight:bold; white-space:pre-line;}
   </style>
 </head>
 
 <body>
 
-<h2>Chipping Tool PRO V10</h2>
+<h2>Chipping Tool PRO V11</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -81,10 +82,10 @@ function analyze(img,name){
   }
 
   grads.sort((a,b)=>a-b);
-  let threshold = grads[Math.floor(grads.length*0.90)];
+  let threshold = grads[Math.floor(grads.length*0.85)];
 
   // ==========================
-  // STEP 2: maschera iniziale
+  // STEP 2: maschera linee
   // ==========================
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
@@ -98,39 +99,14 @@ function analyze(img,name){
 
       let brightness=(d[i]+d[i+1]+d[i+2])/3;
 
-      // filtro luce: elimina fondo chiaro
-      if(grad>threshold && brightness < 230){
+      if(grad>threshold && brightness < 240){
         mask[y*w+x]=1;
       }
     }
   }
 
   // ==========================
-  // STEP 3: rimozione rumore (pixel isolati)
-  // ==========================
-  let cleanMask=[...mask];
-
-  for(let y=2;y<h-2;y++){
-    for(let x=2;x<w-2;x++){
-
-      let count=0;
-
-      for(let dy=-1;dy<=1;dy++){
-        for(let dx=-1;dx<=1;dx++){
-          if(mask[(y+dy)*w+(x+dx)]) count++;
-        }
-      }
-
-      if(count < 3){
-        cleanMask[y*w+x]=0;
-      }
-    }
-  }
-
-  mask = cleanMask;
-
-  // ==========================
-  // STEP 4: centro ROI
+  // STEP 3: centro ROI
   // ==========================
   let xs=[], ys=[];
   for(let i=0;i<mask.length;i++){
@@ -141,7 +117,7 @@ function analyze(img,name){
   }
 
   if(xs.length===0){
-    document.getElementById("result").innerText="No linee";
+    document.getElementById("result").innerText="Linee non rilevate";
     return;
   }
 
@@ -153,7 +129,7 @@ function analyze(img,name){
   let edges=0, broken=0;
 
   // ==========================
-  // STEP 5: continuità linee
+  // STEP 4: continuità direzionale
   // ==========================
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
@@ -165,15 +141,20 @@ function analyze(img,name){
 
       let i=idx*4;
 
-      let neighbors =
+      let horiz =
         mask[y*w+(x-1)] +
-        mask[y*w+(x+1)] +
+        mask[y*w+(x+1)];
+
+      let vert =
         mask[(y-1)*w+x] +
         mask[(y+1)*w+x];
 
+      let isHorizontal = horiz > vert;
+      let continuity = isHorizontal ? horiz : vert;
+
       edges++;
 
-      if(neighbors < 2){
+      if(continuity < 1){
         broken++;
         d[i]=255; d[i+1]=0; d[i+2]=0;
       } else {
@@ -184,6 +165,11 @@ function analyze(img,name){
 
   ctx.putImageData(imgData,0,0);
 
+  if(edges===0){
+    document.getElementById("result").innerText="Errore analisi";
+    return;
+  }
+
   let chipping=(broken/edges)*100;
 
   document.getElementById("result").innerText =
@@ -192,11 +178,23 @@ function analyze(img,name){
   results.push({name,chipping:chipping.toFixed(2)});
 }
 
+
+// ==========================
+// EXPORT
+// ==========================
 function exportExcel(){
+
+  if(results.length===0){
+    alert("Nessun dato");
+    return;
+  }
+
   let ws=XLSX.utils.json_to_sheet(results);
   let wb=XLSX.utils.book_new();
+
   XLSX.utils.book_append_sheet(wb,ws,"Results");
-  XLSX.writeFile(wb,"results.xlsx");
+
+  XLSX.writeFile(wb,"ChippingResults.xlsx");
 }
 
 </script>
