@@ -24,4 +24,182 @@
 
 <div id="result">Carica immagine</div>
 
-<button onclick="exportExcel()">📊 Export Excel</button
+<button onclick="exportExcel()">📊 Export Excel</button>
+
+<script>
+
+let results=[];
+
+document.getElementById("gallery").addEventListener("change", e=>load(e.target));
+document.getElementById("camera").addEventListener("change", e=>load(e.target));
+
+function load(input){
+  const file=input.files[0];
+  if(!file) return;
+
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.src=e.target.result;
+    img.onload=()=>analyze(img,file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+function analyze(img,name){
+
+  const canvas=document.getElementById("canvas");
+  const ctx=canvas.getContext("2d");
+
+  canvas.width=img.width;
+  canvas.height=img.height;
+
+  ctx.drawImage(img,0,0);
+
+  let w=canvas.width;
+  let h=canvas.height;
+
+  let imgData=ctx.getImageData(0,0,w,h);
+  let d=imgData.data;
+
+  let mask=new Array(w*h).fill(0);
+  let grads=[];
+
+  // ==========================
+  // STEP 1: gradienti
+  // ==========================
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+
+      let i=(y*w+x)*4;
+
+      let gx=Math.abs(d[i+4]-d[i-4]);
+      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
+
+      grads.push(gx+gy);
+    }
+  }
+
+  grads.sort((a,b)=>a-b);
+  let threshold = grads[Math.floor(grads.length*0.90)];
+
+  // ==========================
+  // STEP 2: maschera iniziale
+  // ==========================
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+
+      let i=(y*w+x)*4;
+
+      let gx=Math.abs(d[i+4]-d[i-4]);
+      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
+
+      let grad=gx+gy;
+
+      let brightness=(d[i]+d[i+1]+d[i+2])/3;
+
+      // filtro luce: elimina fondo chiaro
+      if(grad>threshold && brightness < 230){
+        mask[y*w+x]=1;
+      }
+    }
+  }
+
+  // ==========================
+  // STEP 3: rimozione rumore (pixel isolati)
+  // ==========================
+  let cleanMask=[...mask];
+
+  for(let y=2;y<h-2;y++){
+    for(let x=2;x<w-2;x++){
+
+      let count=0;
+
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          if(mask[(y+dy)*w+(x+dx)]) count++;
+        }
+      }
+
+      if(count < 3){
+        cleanMask[y*w+x]=0;
+      }
+    }
+  }
+
+  mask = cleanMask;
+
+  // ==========================
+  // STEP 4: centro ROI
+  // ==========================
+  let xs=[], ys=[];
+  for(let i=0;i<mask.length;i++){
+    if(mask[i]){
+      xs.push(i%w);
+      ys.push(Math.floor(i/w));
+    }
+  }
+
+  if(xs.length===0){
+    document.getElementById("result").innerText="No linee";
+    return;
+  }
+
+  let cx=xs.reduce((a,b)=>a+b,0)/xs.length;
+  let cy=ys.reduce((a,b)=>a+b,0)/ys.length;
+
+  let roi = Math.min(w,h)*0.2;
+
+  let edges=0, broken=0;
+
+  // ==========================
+  // STEP 5: continuità linee
+  // ==========================
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+
+      if(Math.abs(x-cx)>roi || Math.abs(y-cy)>roi) continue;
+
+      let idx=y*w+x;
+      if(!mask[idx]) continue;
+
+      let i=idx*4;
+
+      let neighbors =
+        mask[y*w+(x-1)] +
+        mask[y*w+(x+1)] +
+        mask[(y-1)*w+x] +
+        mask[(y+1)*w+x];
+
+      edges++;
+
+      if(neighbors < 2){
+        broken++;
+        d[i]=255; d[i+1]=0; d[i+2]=0;
+      } else {
+        d[i]=0; d[i+1]=255; d[i+2]=0;
+      }
+    }
+  }
+
+  ctx.putImageData(imgData,0,0);
+
+  let chipping=(broken/edges)*100;
+
+  document.getElementById("result").innerText =
+    `${name}\nChipping: ${chipping.toFixed(2)} %`;
+
+  results.push({name,chipping:chipping.toFixed(2)});
+}
+
+function exportExcel(){
+  let ws=XLSX.utils.json_to_sheet(results);
+  let wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Results");
+  XLSX.writeFile(wb,"results.xlsx");
+}
+
+</script>
+
+</body>
+</html>
