@@ -1,21 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chipping Tool PRO V5</title>
+  <title>Chipping Tool PRO V6</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
   <style>
-    body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5; }
-    canvas { max-width:100%; margin-top:10px; }
+    body { font-family:sans-serif; text-align:center; padding:15px; background:#f5f5f5;}
+    canvas { max-width:100%; margin-top:10px;}
     button { padding:10px; margin:10px; background:#007BFF; color:white; border:none; border-radius:8px;}
   </style>
 </head>
 
 <body>
 
-<h2>Chipping Tool PRO V5</h2>
+<h2>Chipping Tool PRO V6</h2>
 
 <input type="file" accept="image/*" id="gallery">
 <input type="file" accept="image/*" capture="environment" id="camera">
@@ -28,106 +27,102 @@
 
 <script>
 
-let results = [];
+let results=[];
 
-document.getElementById("gallery").addEventListener("change", e => load(e.target));
-document.getElementById("camera").addEventListener("change", e => load(e.target));
+document.getElementById("gallery").addEventListener("change", e=>load(e.target));
+document.getElementById("camera").addEventListener("change", e=>load(e.target));
 
 function load(input){
-  const file = input.files[0];
+  const file=input.files[0];
   if(!file) return;
 
-  const reader = new FileReader();
-  reader.onload = e=>{
-    const img = new Image();
-    img.src = e.target.result;
-    img.onload = ()=> analyze(img, file.name);
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.src=e.target.result;
+    img.onload=()=>analyze(img,file.name);
   };
   reader.readAsDataURL(file);
 }
 
-function analyze(img, name){
+function analyze(img,name){
 
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
+  const canvas=document.getElementById("canvas");
+  const ctx=canvas.getContext("2d");
 
-  canvas.width = img.width;
-  canvas.height = img.height;
+  canvas.width=img.width;
+  canvas.height=img.height;
 
   ctx.drawImage(img,0,0);
 
-  let w = canvas.width;
-  let h = canvas.height;
+  let w=canvas.width;
+  let h=canvas.height;
 
-  let imgData = ctx.getImageData(0,0,w,h);
-  let d = imgData.data;
+  let imgData=ctx.getImageData(0,0,w,h);
+  let d=imgData.data;
 
-  let lineMap = new Array(w*h).fill(0);
+  let lineMask=new Array(w*h).fill(0);
 
-  // 🔍 DETECT LINEE (robusto)
+  // ==========================
+  // STEP 1: RIDGE DETECTION (linee chiare)
+  // ==========================
   for(let y=2;y<h-2;y++){
     for(let x=2;x<w-2;x++){
 
       let i=(y*w+x)*4;
 
-      let gx=Math.abs(d[i+4]-d[i-4]);
-      let gy=Math.abs(d[i+w*4]-d[i-w*4]);
+      let c=(d[i]+d[i+1]+d[i+2])/3;
 
-      if(gx+gy>50){
-        lineMap[y*w+x]=1;
+      let left=(d[i-4]+d[i-3]+d[i-2])/3;
+      let right=(d[i+4]+d[i+5]+d[i+6])/3;
+      let up=(d[i-w*4]+d[i-w*4+1]+d[i-w*4+2])/3;
+      let down=(d[i+w*4]+d[i+w*4+1]+d[i+w*4+2])/3;
+
+      // linea = più chiara dei vicini
+      if(c > left+10 && c > right+10 && c > up+10 && c > down+10){
+        lineMask[y*w+x]=1;
       }
     }
   }
 
-  // 🔥 ESPANSIONE (connette linee)
+  // ==========================
+  // STEP 2: ESPANSIONE LINEE
+  // ==========================
   for(let y=2;y<h-2;y++){
     for(let x=2;x<w-2;x++){
-
-      if(lineMap[y*w+x]){
+      if(lineMask[y*w+x]){
         for(let dy=-1;dy<=1;dy++){
           for(let dx=-1;dx<=1;dx++){
-            lineMap[(y+dy)*w+(x+dx)]=1;
+            lineMask[(y+dy)*w+(x+dx)]=1;
           }
         }
       }
     }
   }
 
-  // 🎯 CENTRO REALE
-  let xs=[], ys=[];
-  for(let i=0;i<lineMap.length;i++){
-    if(lineMap[i]){
-      xs.push(i%w);
-      ys.push(Math.floor(i/w));
-    }
-  }
-
-  let cx = xs.reduce((a,b)=>a+b,0)/xs.length;
-  let cy = ys.reduce((a,b)=>a+b,0)/ys.length;
-
   let edges=0, broken=0;
 
-  // 🔬 ANALISI (AREA CENTRALE PIÙ AMPIA)
+  // ==========================
+  // STEP 3: CONTINUITÀ LINEA
+  // ==========================
   for(let y=2;y<h-2;y++){
     for(let x=2;x<w-2;x++){
 
       let idx=y*w+x;
-
-      if(!lineMap[idx]) continue;
-
-      // ROI centrale più larga (chiave!)
-      if(Math.abs(x-cx)>w*0.25 || Math.abs(y-cy)>h*0.25) continue;
+      if(!lineMask[idx]) continue;
 
       let i=idx*4;
 
-      let left=(d[i-4]+d[i-3]+d[i-2])/3;
-      let right=(d[i+4]+d[i+5]+d[i+6])/3;
+      let left=lineMask[y*w+(x-1)];
+      let right=lineMask[y*w+(x+1)];
 
-      let diff=Math.abs(left-right);
+      let up=lineMask[(y-1)*w+x];
+      let down=lineMask[(y+1)*w+x];
 
       edges++;
 
-      if(diff>25){
+      // se la linea si interrompe → chipping
+      if((left+right+up+down) < 2){
         broken++;
         d[i]=255; d[i+1]=0; d[i+2]=0;
       } else {
@@ -140,21 +135,17 @@ function analyze(img, name){
 
   let chipping=(broken/edges)*100;
 
-  document.getElementById("result").innerText =
+  document.getElementById("result").innerText=
     `${name}\nChipping: ${chipping.toFixed(2)} %`;
 
   results.push({name,chipping});
 }
 
 function exportExcel(){
-  if(results.length===0){
-    alert("Nessun dato");
-    return;
-  }
-  let ws = XLSX.utils.json_to_sheet(results);
-  let wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Results");
-  XLSX.writeFile(wb, "results.xlsx");
+  let ws=XLSX.utils.json_to_sheet(results);
+  let wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Results");
+  XLSX.writeFile(wb,"results.xlsx");
 }
 
 </script>
