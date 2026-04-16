@@ -2,21 +2,29 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V21</title>
-
+<title>Chipping Tool PRO V22 - Modalità B</title>
 <style>
-body{font-family:Arial;text-align:center;background:#f5f5f5}
-canvas{max-width:95%;margin-top:10px;border-radius:12px}
-button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#007bff;color:white}
+body{font-family:Arial;text-align:center;background:#f4f6f8}
+canvas{max-width:95%;border-radius:12px;margin-top:10px}
+button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#007bff;color:#fff}
+select{padding:8px;border-radius:6px}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V21</h1>
+<h1>Chipping Tool PRO V22</h1>
 
 <input type="file" id="file"><br>
-<button onclick="process()">ANALISI PRECISA</button>
+<button onclick="analyze()">Analisi (Modalità B)</button>
+
+<br>
+<label>Banda linea:</label>
+<select id="band">
+<option value="1">Stretta (1px)</option>
+<option value="2" selected>Bilanciata (2px)</option>
+<option value="3">Larga (3px)</option>
+</select>
 
 <canvas id="canvas"></canvas>
 <div id="res"></div>
@@ -36,86 +44,100 @@ ctx.drawImage(img,0,0)
 img.src=URL.createObjectURL(e.target.files[0])
 }
 
-function process(){
+// ================= ANALISI =================
+function analyze(){
 
 let w=canvas.width
 let h=canvas.height
+let band=parseInt(document.getElementById("band").value)
 
 let imgData=ctx.getImageData(0,0,w,h)
 let d=imgData.data
 
-let gray=[]
-for(let i=0;i<d.length;i+=4){
-gray.push((d[i]+d[i+1]+d[i+2])/3)
+// === GRAYSCALE ===
+let gray=new Float32Array(w*h)
+for(let i=0,j=0;i<d.length;i+=4,j++){
+gray[j]=(d[i]+d[i+1]+d[i+2])/3
 }
 
-// ===== EDGE DETECTION =====
-let edges=[]
+// === SMOOTH (riduce rumore) ===
+let smooth=new Float32Array(w*h)
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
-
 let i=y*w+x
-
-let gx =
--gray[i-w-1]-2*gray[i-1]-gray[i+w-1]
-+gray[i-w+1]+2*gray[i+1]+gray[i+w+1]
-
-let gy =
--gray[i-w-1]-2*gray[i-w]-gray[i-w+1]
-+gray[i+w-1]+2*gray[i+w]+gray[i+w+1]
-
-let g=Math.sqrt(gx*gx+gy*gy)
-
-edges.push(g>80?255:0)
+smooth[i]=(gray[i]+gray[i-1]+gray[i+1]+gray[i-w]+gray[i+w])/5
 }
 }
 
-// ===== LINE MASK (solo linee forti) =====
-let lineMask=new Array(w*h).fill(0)
+// === DETECT LINEE CHIARE ===
+let lineMask=new Uint8Array(w*h)
 
-for(let i=0;i<edges.length;i++){
-if(edges[i]){
+for(let i=0;i<w*h;i++){
+// linea = più chiara del contesto
+let g=smooth[i]
+if(g>170){ 
 lineMask[i]=1
 }
 }
 
-// ===== DILATA per avere spessore linea =====
+// === EDGE per rafforzare linee ===
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
 let i=y*w+x
+let gx = -smooth[i-1]+smooth[i+1]
+let gy = -smooth[i-w]+smooth[i+w]
+let g=Math.abs(gx)+Math.abs(gy)
 
-if(lineMask[i]){
-for(let dy=-1;dy<=1;dy++){
-for(let dx=-1;dx<=1;dx++){
-lineMask[(y+dy)*w+(x+dx)]=1
-}
-}
+if(g>30 && smooth[i]>150){
+lineMask[i]=1
 }
 }
 }
 
-// ===== CHIPPING SOLO SU LINEE =====
-let total=0
-let chip=0
+// === DILATA banda attorno linea ===
+let bandMask=new Uint8Array(w*h)
 
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
+let i=y*w+x
+if(lineMask[i]){
+for(let dy=-band;dy<=band;dy++){
+for(let dx=-band;dx<=band;dx++){
+let nx=x+dx, ny=y+dy
+if(nx>=0 && ny>=0 && nx<w && ny<h){
+bandMask[ny*w+nx]=1
+}
+}
+}
+}
+}
+}
+
+// === ANALISI CONTINUITÀ ===
+let totalLine=0
+let chip=0
+
+for(let y=1;y<h-1;y++){
+for(let x=1;x<w-1;x++){
 
 let i=y*w+x
 
 if(lineMask[i]){
 
-let p=i*4
-let g=(d[p]+d[p+1]+d[p+2])/3
+totalLine++
 
-// linea = chiara
-if(g>160){
-total++
+let g=smooth[i]
 
-// interruzione = più scuro
-if(g<140){
+// === confronto con vicini lungo direzione ===
+let diff = Math.abs(smooth[i] - (smooth[i-1]+smooth[i+1]+smooth[i-w]+smooth[i+w])/4)
+
+// === criterio chipping ===
+// linea "indebolita" o interrotta
+if(g<150 || diff>25){
 chip++
 
+// evidenzia
+let p=i*4
 d[p]=255
 d[p+1]=0
 d[p+2]=0
@@ -123,26 +145,6 @@ d[p+2]=0
 }
 }
 }
-}
 
-let perc=(chip/total)*100
-
-// ISO
-let iso=0
-if(perc>1) iso=1
-if(perc>5) iso=2
-if(perc>10) iso=3
-if(perc>20) iso=4
-if(perc>40) iso=5
-
-ctx.putImageData(imgData,0,0)
-
-document.getElementById("res").innerHTML=
-`<h2>Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
-
-}
-
-</script>
-
-</body>
-</html>
+// === percentuale ===
+let perc = totalLine>0 ? (chip/totalLine)*100
