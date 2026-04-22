@@ -116,4 +116,55 @@ if(mask[i]){
 
 let neighbors=0
 
-for(let dy=-1;dy
+for(let dy=-1;dy<=1;dy++){
+for(let dx=-1;dx<=1;dx++){
+if(mask[(y+dy)*w+(x+dx)]) neighbors++
+}
+}
+
+// tiene solo strutture "continue"
+if(neighbors >= 4){
+clean[i]=1
+}
+}
+}
+}
+
+// ===== CALCOLO =====
+let total=0
+let chip=0
+
+for(let i=0;i<w*h;i++){
+if(clean[i]){
+total++
+
+chip++
+
+let p=i*4
+d[p]=255
+d[p+1]=0
+d[p+2]=0
+}
+}
+
+let perc = (chip/(w*h))*100
+
+// ISO realistico
+let iso=0
+if(perc>1) iso=1
+if(perc>5) iso=2
+if(perc>10) iso=3
+if(perc>20) iso=4
+if(perc>40) iso=5
+
+ctx.putImageData(imgData,0,0)
+
+document.getElementById("res").innerHTML=
+`<h2>Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
+
+}
+
+</script>
+
+</body>
+</html>
