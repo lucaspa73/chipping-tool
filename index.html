@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V23</title>
+<title>Chipping Tool PRO V24</title>
 
 <style>
 body{font-family:Arial;text-align:center;background:#f4f6f8}
@@ -13,10 +13,10 @@ button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#0
 
 <body>
 
-<h1>Chipping Tool PRO V23</h1>
+<h1>Chipping Tool PRO V24 (Dark Analysis)</h1>
 
 <input type="file" id="file"><br>
-<button onclick="analyze()">Analisi V23 (Precisione Alta)</button>
+<button onclick="analyze()">Analisi V24</button>
 
 <canvas id="canvas"></canvas>
 <div id="res"></div>
@@ -50,111 +50,70 @@ for(let i=0,j=0;i<d.length;i+=4,j++){
 gray[j]=(d[i]+d[i+1]+d[i+2])/3
 }
 
-// ===== SMOOTH =====
+// ===== NORMALIZZAZIONE (stretch contrasto) =====
+let min=255,max=0
+for(let i=0;i<gray.length;i++){
+if(gray[i]<min)min=gray[i]
+if(gray[i]>max)max=gray[i]
+}
+
+for(let i=0;i<gray.length;i++){
+gray[i]=255*(gray[i]-min)/(max-min+1)
+}
+
+// ===== INVERTI (linee diventano scure) =====
+for(let i=0;i<gray.length;i++){
+gray[i]=255-gray[i]
+}
+
+// ===== BLUR LEGGERO =====
 let smooth=new Float32Array(w*h)
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
 let i=y*w+x
 smooth[i]=(
-gray[i] +
-gray[i-1] +
-gray[i+1] +
-gray[i-w] +
-gray[i+w]
+gray[i]+gray[i-1]+gray[i+1]+gray[i-w]+gray[i+w]
 )/5
 }
 }
 
-// ===== RIDGE DETECTION (linee bianche) =====
-let ridge=new Uint8Array(w*h)
-
-for(let y=1;y<h-1;y++){
-for(let x=1;x<w-1;x++){
-
-let i=y*w+x
-
-let center=smooth[i]
-
-// confronto con vicini (linea = massimo locale)
-if(
-center > smooth[i-1] &&
-center > smooth[i+1] &&
-center > smooth[i-w] &&
-center > smooth[i+w]
-){
-ridge[i]=1
-}
-}
-}
-
-// ===== ESPANSIONE LINEA =====
-let lineMask=new Uint8Array(w*h)
-
-for(let y=1;y<h-1;y++){
-for(let x=1;x<w-1;x++){
-let i=y*w+x
-if(ridge[i]){
-for(let dy=-1;dy<=1;dy++){
-for(let dx=-1;dx<=1;dx++){
-lineMask[(y+dy)*w+(x+dx)]=1
-}
-}
-}
-}
-}
-
-// ===== ANALISI CONTINUITÀ =====
-let total=0
-let chip=0
+// ===== THRESHOLD ADATTIVO =====
+let mask=new Uint8Array(w*h)
 
 for(let y=2;y<h-2;y++){
 for(let x=2;x<w-2;x++){
 
 let i=y*w+x
 
-if(lineMask[i]){
+let local=0
+let count=0
 
-total++
-
-// differenza locale (continuità)
-let avg = (
-smooth[i-1]+smooth[i+1]+smooth[i-w]+smooth[i+w]
-)/4
-
-let diff = Math.abs(smooth[i]-avg)
-
-// se la linea "sparisce" o si rompe
-if(diff < 5){ // troppo uniforme → perdita incisione
-chip++
-
-let p=i*4
-d[p]=255
-d[p+1]=0
-d[p+2]=0
+for(let dy=-2;dy<=2;dy++){
+for(let dx=-2;dx<=2;dx++){
+local+=smooth[(y+dy)*w+(x+dx)]
+count++
 }
+}
+
+let avg=local/count
+
+// pixel più scuri della media = incisione
+if(smooth[i] > avg + 8){
+mask[i]=1
 }
 }
 }
 
-// ===== CALCOLO =====
-let perc = total>0 ? (chip/total)*100 : 0
+// ===== FILTRO LINEARE (elimina rumore puntiforme) =====
+let clean=new Uint8Array(w*h)
 
-// ISO realistico
-let iso=0
-if(perc>1) iso=1
-if(perc>5) iso=2
-if(perc>10) iso=3
-if(perc>20) iso=4
-if(perc>40) iso=5
+for(let y=2;y<h-2;y++){
+for(let x=2;x<w-2;x++){
 
-ctx.putImageData(imgData,0,0)
+let i=y*w+x
 
-document.getElementById("res").innerHTML=
-`<h2>Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
+if(mask[i]){
 
-}
+let neighbors=0
 
-</script>
-
-</body>
-</html>
+for(let dy=-1;dy
