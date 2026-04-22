@@ -147,4 +147,25 @@ d[p+2]=0
 }
 
 // === percentuale ===
-let perc = totalLine>0 ? (chip/totalLine)*100
+let perc = totalLine>0 ? (chip/totalLine)*100 : 0
+
+// === ISO (tarato realistico) ===
+let iso=0
+if(perc>1) iso=1
+if(perc>5) iso=2
+if(perc>10) iso=3
+if(perc>20) iso=4
+if(perc>40) iso=5
+
+// === OUTPUT ===
+ctx.putImageData(imgData,0,0)
+
+document.getElementById("res").innerHTML=
+`<h2>Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
+
+}
+
+</script>
+
+</body>
+</html>
