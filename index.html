@@ -2,29 +2,21 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V22 - Modalità B</title>
+<title>Chipping Tool PRO V23</title>
+
 <style>
 body{font-family:Arial;text-align:center;background:#f4f6f8}
-canvas{max-width:95%;border-radius:12px;margin-top:10px}
+canvas{max-width:95%;margin-top:10px;border-radius:12px}
 button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#007bff;color:#fff}
-select{padding:8px;border-radius:6px}
 </style>
 </head>
 
 <body>
 
-<h1>Chipping Tool PRO V22</h1>
+<h1>Chipping Tool PRO V23</h1>
 
 <input type="file" id="file"><br>
-<button onclick="analyze()">Analisi (Modalità B)</button>
-
-<br>
-<label>Banda linea:</label>
-<select id="band">
-<option value="1">Stretta (1px)</option>
-<option value="2" selected>Bilanciata (2px)</option>
-<option value="3">Larga (3px)</option>
-</select>
+<button onclick="analyze()">Analisi V23 (Precisione Alta)</button>
 
 <canvas id="canvas"></canvas>
 <div id="res"></div>
@@ -44,99 +36,97 @@ ctx.drawImage(img,0,0)
 img.src=URL.createObjectURL(e.target.files[0])
 }
 
-// ================= ANALISI =================
 function analyze(){
 
 let w=canvas.width
 let h=canvas.height
-let band=parseInt(document.getElementById("band").value)
 
 let imgData=ctx.getImageData(0,0,w,h)
 let d=imgData.data
 
-// === GRAYSCALE ===
+// ===== GRAYSCALE =====
 let gray=new Float32Array(w*h)
 for(let i=0,j=0;i<d.length;i+=4,j++){
 gray[j]=(d[i]+d[i+1]+d[i+2])/3
 }
 
-// === SMOOTH (riduce rumore) ===
+// ===== SMOOTH =====
 let smooth=new Float32Array(w*h)
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
 let i=y*w+x
-smooth[i]=(gray[i]+gray[i-1]+gray[i+1]+gray[i-w]+gray[i+w])/5
+smooth[i]=(
+gray[i] +
+gray[i-1] +
+gray[i+1] +
+gray[i-w] +
+gray[i+w]
+)/5
 }
 }
 
-// === DETECT LINEE CHIARE ===
+// ===== RIDGE DETECTION (linee bianche) =====
+let ridge=new Uint8Array(w*h)
+
+for(let y=1;y<h-1;y++){
+for(let x=1;x<w-1;x++){
+
+let i=y*w+x
+
+let center=smooth[i]
+
+// confronto con vicini (linea = massimo locale)
+if(
+center > smooth[i-1] &&
+center > smooth[i+1] &&
+center > smooth[i-w] &&
+center > smooth[i+w]
+){
+ridge[i]=1
+}
+}
+}
+
+// ===== ESPANSIONE LINEA =====
 let lineMask=new Uint8Array(w*h)
 
-for(let i=0;i<w*h;i++){
-// linea = più chiara del contesto
-let g=smooth[i]
-if(g>170){ 
-lineMask[i]=1
-}
-}
-
-// === EDGE per rafforzare linee ===
 for(let y=1;y<h-1;y++){
 for(let x=1;x<w-1;x++){
 let i=y*w+x
-let gx = -smooth[i-1]+smooth[i+1]
-let gy = -smooth[i-w]+smooth[i+w]
-let g=Math.abs(gx)+Math.abs(gy)
-
-if(g>30 && smooth[i]>150){
-lineMask[i]=1
-}
-}
-}
-
-// === DILATA banda attorno linea ===
-let bandMask=new Uint8Array(w*h)
-
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-let i=y*w+x
-if(lineMask[i]){
-for(let dy=-band;dy<=band;dy++){
-for(let dx=-band;dx<=band;dx++){
-let nx=x+dx, ny=y+dy
-if(nx>=0 && ny>=0 && nx<w && ny<h){
-bandMask[ny*w+nx]=1
-}
+if(ridge[i]){
+for(let dy=-1;dy<=1;dy++){
+for(let dx=-1;dx<=1;dx++){
+lineMask[(y+dy)*w+(x+dx)]=1
 }
 }
 }
 }
 }
 
-// === ANALISI CONTINUITÀ ===
-let totalLine=0
+// ===== ANALISI CONTINUITÀ =====
+let total=0
 let chip=0
 
-for(let y=1;y<h-1;y++){
-for(let x=1;x<w-1;x++){
+for(let y=2;y<h-2;y++){
+for(let x=2;x<w-2;x++){
 
 let i=y*w+x
 
 if(lineMask[i]){
 
-totalLine++
+total++
 
-let g=smooth[i]
+// differenza locale (continuità)
+let avg = (
+smooth[i-1]+smooth[i+1]+smooth[i-w]+smooth[i+w]
+)/4
 
-// === confronto con vicini lungo direzione ===
-let diff = Math.abs(smooth[i] - (smooth[i-1]+smooth[i+1]+smooth[i-w]+smooth[i+w])/4)
+let diff = Math.abs(smooth[i]-avg)
 
-// === criterio chipping ===
-// linea "indebolita" o interrotta
-if(g<150 || diff>25){
+// se la linea "sparisce" o si rompe
+if(diff < 5){ // troppo uniforme → perdita incisione
 chip++
 
-// evidenzia
 let p=i*4
 d[p]=255
 d[p+1]=0
@@ -146,10 +136,10 @@ d[p+2]=0
 }
 }
 
-// === percentuale ===
-let perc = totalLine>0 ? (chip/totalLine)*100 : 0
+// ===== CALCOLO =====
+let perc = total>0 ? (chip/total)*100 : 0
 
-// === ISO (tarato realistico) ===
+// ISO realistico
 let iso=0
 if(perc>1) iso=1
 if(perc>5) iso=2
@@ -157,7 +147,6 @@ if(perc>10) iso=3
 if(perc>20) iso=4
 if(perc>40) iso=5
 
-// === OUTPUT ===
 ctx.putImageData(imgData,0,0)
 
 document.getElementById("res").innerHTML=
