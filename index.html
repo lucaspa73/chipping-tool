@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Chipping Tool PRO V24</title>
+<title>Chipping Tool PRO V25.1</title>
 
 <style>
 body{font-family:Arial;text-align:center;background:#f4f6f8}
@@ -13,10 +13,12 @@ button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#0
 
 <body>
 
-<h1>Chipping Tool PRO V24 (Dark Analysis)</h1>
+<h1>Chipping Tool PRO V25.1</h1>
 
-<input type="file" id="file"><br>
-<button onclick="analyze()">Analisi V24</button>
+<!-- ✅ GALLERIA + FOTOCAMERA -->
+<input type="file" id="file" accept="image/*" capture="environment"><br>
+
+<button onclick="analyze()">Analisi</button>
 
 <canvas id="canvas"></canvas>
 <div id="res"></div>
@@ -28,12 +30,15 @@ let ctx=canvas.getContext("2d")
 let img=new Image()
 
 document.getElementById("file").onchange=e=>{
+const file = e.target.files[0]
+if(!file) return
+
 img.onload=()=>{
 canvas.width=img.width
 canvas.height=img.height
 ctx.drawImage(img,0,0)
 }
-img.src=URL.createObjectURL(e.target.files[0])
+img.src=URL.createObjectURL(file)
 }
 
 function analyze(){
@@ -44,100 +49,92 @@ let h=canvas.height
 let imgData=ctx.getImageData(0,0,w,h)
 let d=imgData.data
 
-// ===== GRAYSCALE =====
+// ROI centrale
+let roiX=w*0.3
+let roiY=h*0.3
+let roiW=w*0.4
+let roiH=h*0.4
+
 let gray=new Float32Array(w*h)
+
 for(let i=0,j=0;i<d.length;i+=4,j++){
 gray[j]=(d[i]+d[i+1]+d[i+2])/3
 }
 
-// ===== NORMALIZZAZIONE (stretch contrasto) =====
+// normalizzazione
 let min=255,max=0
 for(let i=0;i<gray.length;i++){
 if(gray[i]<min)min=gray[i]
 if(gray[i]>max)max=gray[i]
 }
-
 for(let i=0;i<gray.length;i++){
 gray[i]=255*(gray[i]-min)/(max-min+1)
 }
 
-// ===== INVERTI (linee diventano scure) =====
+// inverti
 for(let i=0;i<gray.length;i++){
 gray[i]=255-gray[i]
 }
 
-// ===== BLUR LEGGERO =====
-let smooth=new Float32Array(w*h)
-for(let y=1;y<h-1;y++){
-for(let x=1;x<w-1;x++){
-let i=y*w+x
-smooth[i]=(
-gray[i]+gray[i-1]+gray[i+1]+gray[i-w]+gray[i+w]
-)/5
-}
-}
-
-// ===== THRESHOLD ADATTIVO =====
 let mask=new Uint8Array(w*h)
 
 for(let y=2;y<h-2;y++){
 for(let x=2;x<w-2;x++){
 
+if(x<roiX||x>roiX+roiW||y<roiY||y>roiY+roiH) continue
+
 let i=y*w+x
 
-let local=0
-let count=0
+let gx = gray[i+1]-gray[i-1]
+let gy = gray[i+w]-gray[i-w]
+let edge = Math.sqrt(gx*gx+gy*gy)
 
+let local=0,count=0
 for(let dy=-2;dy<=2;dy++){
 for(let dx=-2;dx<=2;dx++){
-local+=smooth[(y+dy)*w+(x+dx)]
+local+=gray[(y+dy)*w+(x+dx)]
 count++
 }
 }
-
 let avg=local/count
 
-// pixel più scuri della media = incisione
-if(smooth[i] > avg + 8){
+let micro = gray[i] > avg + 12
+
+if(edge>20 || micro){
 mask[i]=1
 }
 }
 }
 
-// ===== FILTRO LINEARE (elimina rumore puntiforme) =====
+// pulizia
 let clean=new Uint8Array(w*h)
 
 for(let y=2;y<h-2;y++){
 for(let x=2;x<w-2;x++){
 
 let i=y*w+x
+if(!mask[i]) continue
 
-if(mask[i]){
-
-let neighbors=0
-
+let n=0
 for(let dy=-1;dy<=1;dy++){
 for(let dx=-1;dx<=1;dx++){
-if(mask[(y+dy)*w+(x+dx)]) neighbors++
+if(mask[(y+dy)*w+(x+dx)]) n++
 }
 }
 
-// tiene solo strutture "continue"
-if(neighbors >= 4){
-clean[i]=1
-}
-}
+if(n>=3) clean[i]=1
 }
 }
 
-// ===== CALCOLO =====
-let total=0
 let chip=0
+let total=roiW*roiH
 
-for(let i=0;i<w*h;i++){
+for(let y=0;y<h;y++){
+for(let x=0;x<w;x++){
+
+let i=y*w+x
+
 if(clean[i]){
-total++
-
 chip++
 
 let p=i*4
@@ -146,10 +143,10 @@ d[p+1]=0
 d[p+2]=0
 }
 }
+}
 
-let perc = (chip/(w*h))*100
+let perc = (chip/total)*100
 
-// ISO realistico
 let iso=0
 if(perc>1) iso=1
 if(perc>5) iso=2
