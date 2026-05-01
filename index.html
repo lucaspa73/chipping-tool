@@ -5,9 +5,13 @@
 <title>Chipping Tool PRO V25.1</title>
 
 <style>
-body{font-family:Arial;text-align:center;background:#f4f6f8}
-canvas{max-width:95%;margin-top:10px;border-radius:12px}
-button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#007bff;color:#fff}
+body{font-family:Arial;text-align:center;background:#f4f6f8;padding:20px}
+canvas{max-width:95%;margin-top:10px;border-radius:12px;cursor:crosshair;border:2px solid #ddd}
+button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#007bff;color:#fff;cursor:pointer}
+button:hover{background:#0056b3}
+button:disabled{background:#ccc;cursor:not-allowed}
+#info{margin-top:20px;font-size:14px;color:#666}
+.selection{display:inline-block;padding:10px;background:#ffe6e6;border-radius:8px;margin:10px 0}
 </style>
 </head>
 
@@ -15,12 +19,21 @@ button{padding:10px 20px;margin:10px;border:none;border-radius:8px;background:#0
 
 <h1>Chipping Tool PRO V25.1</h1>
 
-<!-- ✅ GALLERIA + FOTOCAMERA -->
 <input type="file" id="file" accept="image/*" capture="environment"><br>
 
-<button onclick="analyze()">Analisi</button>
+<div id="selectionMode" style="display:none">
+  <div class="selection">
+    <p>Clicca sui 4 vertici del quadrato 6x6 (in ordine: alto-sx, alto-dx, basso-dx, basso-sx)</p>
+    <p id="clickCount">Vertici selezionati: <strong>0/4</strong></p>
+  </div>
+  <button onclick="resetSelection()" style="background:#dc3545">Ripeti Selezione</button>
+</div>
 
 <canvas id="canvas"></canvas>
+
+<div id="info"></div>
+
+<button id="analyzeBtn" onclick="analyze()" style="display:none">Analisi</button>
 <div id="res"></div>
 
 <script>
@@ -29,19 +42,94 @@ let canvas=document.getElementById("canvas")
 let ctx=canvas.getContext("2d")
 let img=new Image()
 
+let selectionMode=false
+let vertices=[]
+let selectedROI=null
+
+// Carica immagine
 document.getElementById("file").onchange=e=>{
-const file = e.target.files[0]
+const file=e.target.files[0]
 if(!file) return
 
 img.onload=()=>{
 canvas.width=img.width
 canvas.height=img.height
 ctx.drawImage(img,0,0)
+selectionMode=true
+vertices=[]
+selectedROI=null
+document.getElementById("selectionMode").style.display="block"
+document.getElementById("analyzeBtn").style.display="none"
+document.getElementById("res").innerHTML=""
 }
 img.src=URL.createObjectURL(file)
 }
 
+// Click per selezionare vertici
+canvas.onclick=e=>{
+if(!selectionMode) return
+
+const rect=canvas.getBoundingClientRect()
+const x=e.clientX-rect.left
+const y=e.clientY-rect.top
+
+vertices.push({x,y})
+document.getElementById("clickCount").innerText=`Vertici selezionati: <strong>${vertices.length}/4</strong>`
+
+// Disegna punto
+ctx.fillStyle="#ff0000"
+ctx.beginPath()
+ctx.arc(x,y,5,0,Math.PI*2)
+ctx.fill()
+
+// Testo numero
+ctx.fillStyle="#fff"
+ctx.font="bold 12px Arial"
+ctx.textAlign="center"
+ctx.textBaseline="middle"
+ctx.fillText(vertices.length,x,y)
+
+if(vertices.length===4){
+  // Calcola ROI dal quadrato
+  let minX=Math.min(vertices[0].x,vertices[1].x,vertices[2].x,vertices[3].x)
+  let maxX=Math.max(vertices[0].x,vertices[1].x,vertices[2].x,vertices[3].x)
+  let minY=Math.min(vertices[0].y,vertices[1].y,vertices[2].y,vertices[3].y)
+  let maxY=Math.max(vertices[0].y,vertices[1].y,vertices[2].y,vertices[3].y)
+  
+  selectedROI={
+    x:minX,
+    y:minY,
+    w:maxX-minX,
+    h:maxY-minY
+  }
+  
+  // Disegna rettangolo
+  ctx.strokeStyle="#ffff00"
+  ctx.lineWidth=3
+  ctx.strokeRect(selectedROI.x,selectedROI.y,selectedROI.w,selectedROI.h)
+  
+  // Abilita analisi
+  selectionMode=false
+  document.getElementById("selectionMode").style.display="none"
+  document.getElementById("analyzeBtn").style.display="inline-block"
+  
+  document.getElementById("info").innerHTML=
+    `<strong>Quadrato selezionato:</strong> (${selectedROI.x.toFixed(0)}, ${selectedROI.y.toFixed(0)}) - ${selectedROI.w.toFixed(0)}x${selectedROI.h.toFixed(0)}px`
+}
+}
+
+function resetSelection(){
+ctx.drawImage(img,0,0)
+vertices=[]
+selectedROI=null
+document.getElementById("clickCount").innerText=`Vertici selezionati: <strong>0/4</strong>`
+}
+
 function analyze(){
+if(!selectedROI){
+  alert("Seleziona prima il quadrato!")
+  return
+}
 
 let w=canvas.width
 let h=canvas.height
@@ -49,14 +137,10 @@ let h=canvas.height
 let imgData=ctx.getImageData(0,0,w,h)
 let d=imgData.data
 
-// Quadrato 6x6 centrale
-let centerX=w/2
-let centerY=h/2
-let squareSize=6
-let roiX=centerX-squareSize/2
-let roiY=centerY-squareSize/2
-let roiW=squareSize
-let roiH=squareSize
+let roiX=selectedROI.x
+let roiY=selectedROI.y
+let roiW=selectedROI.w
+let roiH=selectedROI.h
 
 let gray=new Float32Array(w*h)
 
@@ -84,14 +168,14 @@ let mask=new Uint8Array(w*h)
 for(let y=2;y<h-2;y++){
 for(let x=2;x<w-2;x++){
 
-// Considera SOLO il quadrato 6x6 centrale
+// Considera SOLO il quadrato selezionato
 if(x<roiX||x>roiX+roiW||y<roiY||y>roiY+roiH) continue
 
 let i=y*w+x
 
-let gx = gray[i+1]-gray[i-1]
-let gy = gray[i+w]-gray[i-w]
-let edge = Math.sqrt(gx*gx+gy*gy)
+let gx=gray[i+1]-gray[i-1]
+let gy=gray[i+w]-gray[i-w]
+let edge=Math.sqrt(gx*gx+gy*gy)
 
 let local=0,count=0
 for(let dy=-2;dy<=2;dy++){
@@ -102,9 +186,9 @@ count++
 }
 let avg=local/count
 
-let micro = gray[i] > avg + 12
+let micro=gray[i]>avg+12
 
-if(edge>20 || micro){
+if(edge>20||micro){
 mask[i]=1
 }
 }
@@ -149,7 +233,7 @@ d[p+2]=0
 }
 }
 
-let perc = (chip/total)*100
+let perc=(chip/total)*100
 
 let iso=0
 if(perc>1) iso=1
@@ -160,13 +244,16 @@ if(perc>40) iso=5
 
 ctx.putImageData(imgData,0,0)
 
-// Disegna il quadrato 6x6 centrale con un rettangolo
-ctx.strokeStyle='yellow'
-ctx.lineWidth=2
+// Ridisegna rettangolo
+ctx.strokeStyle="#ffff00"
+ctx.lineWidth=3
 ctx.strokeRect(roiX,roiY,roiW,roiH)
 
 document.getElementById("res").innerHTML=
-`<h2>Chipping Quadrato 6x6 Centrale: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
+`<h2>Chipping nel Quadrato Selezionato: ${perc.toFixed(2)} % | ISO: ${iso}</h2>
+<p style="color:#666">Pixel danneggiati: ${chip} / ${total}</p>`
+
+document.getElementById("analyzeBtn").innerHTML="Analizza di Nuovo"
 
 }
 
