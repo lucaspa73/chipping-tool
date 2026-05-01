@@ -49,11 +49,14 @@ let h=canvas.height
 let imgData=ctx.getImageData(0,0,w,h)
 let d=imgData.data
 
-// ROI centrale
-let roiX=w*0.3
-let roiY=h*0.3
-let roiW=w*0.4
-let roiH=h*0.4
+// Quadrato 6x6 centrale
+let centerX=w/2
+let centerY=h/2
+let squareSize=6
+let roiX=centerX-squareSize/2
+let roiY=centerY-squareSize/2
+let roiW=squareSize
+let roiH=squareSize
 
 let gray=new Float32Array(w*h)
 
@@ -81,6 +84,7 @@ let mask=new Uint8Array(w*h)
 for(let y=2;y<h-2;y++){
 for(let x=2;x<w-2;x++){
 
+// Considera SOLO il quadrato 6x6 centrale
 if(x<roiX||x>roiX+roiW||y<roiY||y>roiY+roiH) continue
 
 let i=y*w+x
@@ -156,8 +160,13 @@ if(perc>40) iso=5
 
 ctx.putImageData(imgData,0,0)
 
+// Disegna il quadrato 6x6 centrale con un rettangolo
+ctx.strokeStyle='yellow'
+ctx.lineWidth=2
+ctx.strokeRect(roiX,roiY,roiW,roiH)
+
 document.getElementById("res").innerHTML=
-`<h2>Chipping: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
+`<h2>Chipping Quadrato 6x6 Centrale: ${perc.toFixed(2)} % | ISO: ${iso}</h2>`
 
 }
 
