@@ -12,6 +12,11 @@ button:hover{background:#0056b3}
 button:disabled{background:#ccc;cursor:not-allowed}
 #info{margin-top:20px;font-size:14px;color:#666}
 .selection{display:inline-block;padding:10px;background:#ffe6e6;border-radius:8px;margin:10px 0}
+.sliders{display:none;background:#f9f9f9;padding:20px;border-radius:8px;margin:20px auto;max-width:600px;text-align:left}
+.slider-group{margin:15px 0;padding:10px;background:#fff;border-radius:5px}
+.slider-group label{display:block;margin-bottom:5px;font-weight:bold;color:#333}
+.slider-group input[type="range"]{width:100%;cursor:pointer}
+.slider-value{display:inline-block;background:#007bff;color:#fff;padding:3px 8px;border-radius:4px;margin-left:10px;font-weight:bold}
 </style>
 </head>
 
@@ -33,6 +38,38 @@ button:disabled{background:#ccc;cursor:not-allowed}
 
 <div id="info"></div>
 
+<!-- SLIDER INTERATTIVI -->
+<div id="sliders" class="sliders">
+  <h3>⚙️ Parametri di Analisi</h3>
+  
+  <div class="slider-group">
+    <label for="edgeThreshold">Soglia Edge Detection (Bordi)</label>
+    <input type="range" id="edgeThreshold" min="5" max="100" value="20" step="1">
+    <span class="slider-value" id="edgeValue">20</span>
+  </div>
+  
+  <div class="slider-group">
+    <label for="microThreshold">Soglia Microroughness (Rugosità)</label>
+    <input type="range" id="microThreshold" min="5" max="50" value="12" step="1">
+    <span class="slider-value" id="microValue">12</span>
+  </div>
+  
+  <div class="slider-group">
+    <label for="cleaningThreshold">Pixel Connessi Minimi (Pulizia)</label>
+    <input type="range" id="cleaningThreshold" min="2" max="10" value="3" step="1">
+    <span class="slider-value" id="cleaningValue">3</span>
+  </div>
+  
+  <div class="slider-group">
+    <label for="minArea">Area Minima Pixel (Filtro Rumore)</label>
+    <input type="range" id="minArea" min="0" max="50" value="0" step="1">
+    <span class="slider-value" id="areaValue">0</span>
+  </div>
+  
+  <button onclick="analyze()" style="background:#28a745;width:100%;margin-top:15px">🔍 Analizza con Nuovi Parametri</button>
+  <button onclick="resetSliders()" style="background:#6c757d;width:100%;margin-top:10px">↩️ Ripristina Valori Predefiniti</button>
+</div>
+
 <button id="analyzeBtn" onclick="analyze()" style="display:none">Analisi</button>
 <div id="res"></div>
 
@@ -45,6 +82,45 @@ let img=new Image()
 let selectionMode=false
 let vertices=[]
 let selectedROI=null
+let originalImageData=null
+
+// Valori predefiniti slider
+const defaultParams={
+  edgeThreshold:20,
+  microThreshold:12,
+  cleaningThreshold:3,
+  minArea:0
+}
+
+// Update slider values display
+document.getElementById("edgeThreshold").oninput=e=>{
+  document.getElementById("edgeValue").innerText=e.target.value
+  if(selectedROI) analyze()
+}
+document.getElementById("microThreshold").oninput=e=>{
+  document.getElementById("microValue").innerText=e.target.value
+  if(selectedROI) analyze()
+}
+document.getElementById("cleaningThreshold").oninput=e=>{
+  document.getElementById("cleaningValue").innerText=e.target.value
+  if(selectedROI) analyze()
+}
+document.getElementById("minArea").oninput=e=>{
+  document.getElementById("areaValue").innerText=e.target.value
+  if(selectedROI) analyze()
+}
+
+function resetSliders(){
+  document.getElementById("edgeThreshold").value=defaultParams.edgeThreshold
+  document.getElementById("edgeValue").innerText=defaultParams.edgeThreshold
+  document.getElementById("microThreshold").value=defaultParams.microThreshold
+  document.getElementById("microValue").innerText=defaultParams.microThreshold
+  document.getElementById("cleaningThreshold").value=defaultParams.cleaningThreshold
+  document.getElementById("cleaningValue").innerText=defaultParams.cleaningThreshold
+  document.getElementById("minArea").value=defaultParams.minArea
+  document.getElementById("areaValue").innerText=defaultParams.minArea
+  if(selectedROI) analyze()
+}
 
 // Carica immagine
 document.getElementById("file").onchange=e=>{
@@ -55,11 +131,13 @@ img.onload=()=>{
 canvas.width=img.width
 canvas.height=img.height
 ctx.drawImage(img,0,0)
+originalImageData=ctx.getImageData(0,0,canvas.width,canvas.height)
 selectionMode=true
 vertices=[]
 selectedROI=null
 document.getElementById("selectionMode").style.display="block"
 document.getElementById("analyzeBtn").style.display="none"
+document.getElementById("sliders").style.display="none"
 document.getElementById("res").innerHTML=""
 }
 img.src=URL.createObjectURL(file)
@@ -108,10 +186,10 @@ if(vertices.length===4){
   ctx.lineWidth=3
   ctx.strokeRect(selectedROI.x,selectedROI.y,selectedROI.w,selectedROI.h)
   
-  // Abilita analisi
+  // Abilita analisi e slider
   selectionMode=false
   document.getElementById("selectionMode").style.display="none"
-  document.getElementById("analyzeBtn").style.display="inline-block"
+  document.getElementById("sliders").style.display="block"
   
   document.getElementById("info").innerHTML=
     `<strong>Quadrato selezionato:</strong> (${selectedROI.x.toFixed(0)}, ${selectedROI.y.toFixed(0)}) - ${selectedROI.w.toFixed(0)}x${selectedROI.h.toFixed(0)}px`
@@ -131,9 +209,16 @@ if(!selectedROI){
   return
 }
 
+// Leggi parametri dai slider
+let edgeThreshold=parseInt(document.getElementById("edgeThreshold").value)
+let microThreshold=parseInt(document.getElementById("microThreshold").value)
+let cleaningThreshold=parseInt(document.getElementById("cleaningThreshold").value)
+let minArea=parseInt(document.getElementById("minArea").value)
+
 let w=canvas.width
 let h=canvas.height
 
+// Copia dei dati originali
 let imgData=ctx.getImageData(0,0,w,h)
 let d=imgData.data
 
@@ -186,15 +271,15 @@ count++
 }
 let avg=local/count
 
-let micro=gray[i]>avg+12
+let micro=gray[i]>avg+microThreshold
 
-if(edge>20||micro){
+if(edge>edgeThreshold||micro){
 mask[i]=1
 }
 }
 }
 
-// pulizia
+// pulizia con soglia configurabile
 let clean=new Uint8Array(w*h)
 
 for(let y=2;y<h-2;y++){
@@ -210,12 +295,62 @@ if(mask[(y+dy)*w+(x+dx)]) n++
 }
 }
 
-if(n>=3) clean[i]=1
+if(n>=cleaningThreshold) clean[i]=1
 }
+}
+
+// Filtro area minima
+if(minArea>0){
+  let labeled=new Int32Array(w*h)
+  let label=0
+  let areas={}
+  
+  // Flood fill per contare pixel connessi
+  for(let y=roiY;y<roiY+roiH;y++){
+    for(let x=roiX;x<roiX+roiW;x++){
+      let i=y*w+x
+      if(clean[i]&&!labeled[i]){
+        label++
+        areas[label]=0
+        let stack=[[x,y]]
+        while(stack.length){
+          let [cx,cy]=stack.pop()
+          let ci=cy*w+cx
+          if(labeled[ci]) continue
+          labeled[ci]=label
+          areas[label]++
+          for(let dy=-1;dy<=1;dy++){
+            for(let dx=-1;dx<=1;dx++){
+              let nx=cx+dx,ny=cy+dy
+              if(nx>=roiX&&nx<roiX+roiW&&ny>=roiY&&ny<roiY+roiH){
+                let ni=ny*w+nx
+                if(clean[ni]&&!labeled[ni]) stack.push([nx,ny])
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Rimuovi aree piccole
+  for(let y=roiY;y<roiY+roiH;y++){
+    for(let x=roiX;x<roiX+roiW;x++){
+      let i=y*w+x
+      if(labeled[i]&&areas[labeled[i]]<minArea){
+        clean[i]=0
+      }
+    }
+  }
 }
 
 let chip=0
 let total=roiW*roiH
+
+// Ridisegna immagine originale
+for(let i=0;i<d.length;i++){
+  d[i]=originalImageData.data[i]
+}
 
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
@@ -251,9 +386,8 @@ ctx.strokeRect(roiX,roiY,roiW,roiH)
 
 document.getElementById("res").innerHTML=
 `<h2>Chipping nel Quadrato Selezionato: ${perc.toFixed(2)} % | ISO: ${iso}</h2>
-<p style="color:#666">Pixel danneggiati: ${chip} / ${total}</p>`
-
-document.getElementById("analyzeBtn").innerHTML="Analizza di Nuovo"
+<p style="color:#666">Pixel danneggiati: ${chip} / ${total}</p>
+<p style="color:#999;font-size:12px">Edge: ${edgeThreshold} | Micro: ${microThreshold} | Pulizia: ${cleaningThreshold} | Min Area: ${minArea}</p>`
 
 }
 
